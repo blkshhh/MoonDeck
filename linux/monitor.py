@@ -2,6 +2,7 @@
 """MoonDeck: widgets de cristal para el escritorio de Linux (COSMIC)."""
 
 import calendar
+import collections
 import datetime
 import faulthandler
 import json
@@ -110,6 +111,7 @@ try:
     from sensores import Sampler
     import velocimetro
     import esferas
+    import monitores
     import packs
 except Exception:
     _excepthook(*sys.exc_info())
@@ -281,6 +283,9 @@ def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL):
     fd.set_absolute_size(max(6, px * ESCALA) * Pango.SCALE)
     fd.set_weight(peso)
     lay.set_font_description(fd)
+    attrs = Pango.AttrList()
+    attrs.insert(Pango.attr_font_features_new("tnum"))  # cifras de ancho fijo: no bailan al cambiar
+    lay.set_attributes(attrs)
     lay.set_text(texto, -1)
     return lay
 
@@ -313,10 +318,19 @@ def px_que_quepa(widget, cr, texto, ancho, alto, peso=Pango.Weight.LIGHT):
 class LienzoCairo:
     """Las operaciones de dibujo que usan los relojes y velocímetros comunes (esferas.py)."""
 
-    PESOS = {"fino": Pango.Weight.LIGHT, "normal": Pango.Weight.NORMAL, "negrita": Pango.Weight.BOLD}
+    PESOS = {"fino": Pango.Weight.LIGHT, "normal": Pango.Weight.NORMAL, "negrita": Pango.Weight.BOLD,
+             "mono": Pango.Weight.NORMAL}  # "mono": letra de ancho fijo (dibujos hechos con caracteres)
 
     def __init__(self, widget, cr):
         self.widget, self.cr = widget, cr
+
+    def _capa(self, texto, px, peso):
+        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso])
+        if peso == "mono":
+            fd = lay.get_font_description().copy()
+            fd.set_family("monospace")
+            lay.set_font_description(fd)
+        return lay
 
     def _color(self, c):
         (self.cr.set_source_rgba if len(c) == 4 else self.cr.set_source_rgb)(*c)
@@ -395,10 +409,10 @@ class LienzoCairo:
         cr.restore()
 
     def medir(self, texto, px, peso="normal"):
-        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso]).get_pixel_size()
+        return self._capa(texto, px, peso).get_pixel_size()
 
     def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
-        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso])
+        lay = self._capa(texto, px, peso)
         lw, lh = lay.get_pixel_size()
         self._color(color)
         self.cr.move_to(x + (w - lw) * h_al, y + (h - lh) * v_al)
@@ -552,6 +566,166 @@ class Barra(Dibujo):
             rect_redondeado(cr, 0, 0, max(ancho, self.alto), self.alto, r)
             cr.set_source_rgb(*color)
             cr.fill()
+
+
+# Las partes de cada monitor que se pueden ocultar (Configuración > Monitores), en orden.
+# "otras" solo existe con un estilo de dibujo; "grande" es la cifra grande o, con dibujo, la de dentro.
+PARTES_MONITOR = {
+    "cpu": (("modelo", "Nombre del procesador"), ("grande", "Cifra principal"),
+            ("otras", "Otras medidas en el dibujo"), ("sub", "Frecuencia, procesos y consumo"),
+            ("temp", "Temperatura"), ("grafica", "Gráfica"), ("leyenda", "Leyenda de la gráfica"),
+            ("nucleos", "Barras de los núcleos"), ("uptime", "Hilos y tiempo encendido")),
+    "memoria": (("grande", "Cifra principal"), ("otras", "Otras medidas en el dibujo"), ("sub", "RAM usada"),
+                ("barra", "Barra de la RAM"), ("swap", "Swap"), ("grafica", "Gráfica"),
+                ("leyenda", "Leyenda de la gráfica")),
+    "gpu": (("modelo", "Nombre de la GPU"), ("grande", "Cifra principal"),
+            ("otras", "Otras medidas en el dibujo"), ("temp", "Temperatura"), ("sub", "VRAM"),
+            ("sub2", "Consumo, reloj y ventilador"), ("grafica", "Gráfica"), ("leyenda", "Leyenda de la gráfica")),
+}
+PARTES_MONITOR["discos"] = (("grande", "Cifra principal"), ("otras", "Otras medidas en el dibujo"),
+                            ("sub", "Escritura"), ("grafica", "Gráfica"), ("leyenda", "Leyenda de la gráfica"),
+                            ("particiones", "Particiones"))
+PARTES_MONITOR["red"] = (("grande", "Cifra principal"), ("otras", "Otras medidas en el dibujo"),
+                         ("sub", "Subida"), ("grafica", "Gráfica"), ("leyenda", "Leyenda de la gráfica"))
+# Lo que se oculta de entrada con un dibujo (lo repite el propio dibujo).
+OCULTOS_CON_DIBUJO = {"cpu": ("temp", "grafica", "leyenda"), "memoria": ("barra", "grafica", "leyenda"),
+                      "gpu": ("temp", "grafica", "leyenda"), "red": ("sub", "grafica", "leyenda"),
+                      "discos": ("sub", "grafica", "leyenda")}
+ALINEACIONES = ((0.0, "format-justify-left-symbolic", "Izquierda"), (0.5, "format-justify-center-symbolic", "Centro"),
+                (1.0, "format-justify-right-symbolic", "Derecha"))
+
+
+class VistaMonitor(Dibujo):
+    """CPU, GPU o Memoria con un estilo de monitors.py (aguja, anillos...). Los valores
+    van poco a poco hacia cada lectura, y las cifras cuentan con ellos: nada salta."""
+
+    def __init__(self):
+        super().__init__()
+        self.poner_alto(90, 170)
+        self.estilo = "clasico"
+        self.alinear = 0.5       # 0 izquierda, 0.5 centro, 1 derecha
+        self.tarjeta = None      # su Tarjeta (para los estilos que pintan en su fondo)
+        self.latido = True       # la esfera late con cada lectura
+        self.estado = {}         # lo que un estilo quiera recordar entre fotogramas (el juego de la vida...)
+        self.cifra = True        # la cifra principal dentro del dibujo
+        self.otras = True        # las medidas que acompañan (temperatura, VRAM...)
+        self.medidas = []        # (valor, tope, color, nombre, formato) de la última lectura
+        self.valores = []        # lo que se ve ahora (se anima hacia `medidas`)
+        self.velocidades = []    # de cada valor: van como un muelle amortiguado (arranque y frenada suaves)
+        self.fase = 0.0          # vueltas de lo que gira (más deprisa con más carga)
+        self.burbujas = 0.0      # lo que han subido las burbujas (se acumula: cambiar de ritmo no las hace saltar)
+        self.agitacion = 0.0     # 0-1: cuánto se está moviendo la medida principal (el líquido chapotea)
+        self.fases = []          # vueltas de cada celda (planetas del núcleo orbital), acumuladas
+        self.avances = []        # lo mismo por medida: cada medida mueve su parte a su ritmo
+        self.latidos = 0.0       # latidos del electrocardiograma (de 54 a 150 por minuto según la carga)
+        self.ultima = time.monotonic()  # cuándo llegó la última lectura (el paisaje se desliza entre lecturas)
+        self._dibujado = 0.0     # cuándo se redibujó (para los estilos con menos fotogramas)
+        self.celdas = []         # núcleos (o medidas) 0-1, animados como los valores
+        self.celdas_objetivo = []
+        self.nombres = []
+        self.historial = collections.deque(maxlen=120)  # celdas de las últimas lecturas
+        self.serie = collections.deque(maxlen=120)      # fracs de las medidas en las últimas lecturas
+        self.llegadas = collections.deque(maxlen=120)   # cuándo llegó cada lectura del historial
+        self._animando = None
+        self._antes = time.monotonic()
+        self.connect("draw", self.dibujar)
+        self.connect("map", lambda _w: self.arrancar())
+
+    def arrancar(self):
+        """Pone en marcha el temporizador si hay algo que mover (y se ve)."""
+        if not self._animando and self.get_mapped():
+            self._antes = time.monotonic()
+            self._animando = GLib.timeout_add(16, self._animar)
+        self.queue_draw()
+
+    def poner(self, medidas, nucleos=None):
+        """medidas: (valor, tope, color, nombre, formato); nucleos: % de cada núcleo (CPU)."""
+        if len(medidas) != len(self.valores) or not self.get_mapped():
+            self.valores = [m[0] or 0.0 for m in medidas]
+            self.velocidades = [0.0] * len(medidas)
+        self.medidas = medidas
+        if nucleos:
+            objetivo, self.nombres = [v / 100 for v in nucleos], [str(i) for i in range(len(nucleos))]
+        else:
+            objetivo = [max(0.0, min(1.0, (m[0] or 0.0) / m[1])) if m[1] else 0.0 for m in medidas]
+            self.nombres = [_(m[3]) for m in medidas]
+        if len(objetivo) != len(self.celdas) or not self.get_mapped():
+            self.celdas = list(objetivo)
+        self.celdas_objetivo = objetivo
+        self.historial.append(objetivo)
+        self.ultima = time.monotonic()
+        self.llegadas.append(self.ultima)
+        self.serie.append([max(0.0, min(1.0, (m[0] or 0.0) / m[1])) if m[1] else 0.0 for m in medidas])
+        if any(abs((m[0] or 0.0) - v) > m[1] * 1e-3 for m, v in zip(medidas, self.valores)):
+            self.arrancar()
+        else:
+            self.queue_draw()
+
+    def _animar(self):
+        ahora = time.monotonic()
+        dt, self._antes = min(0.1, ahora - self._antes), ahora
+        listo = True
+        omega = 3.5  # muelle con amortiguación crítica: llega en algo más de un segundo, sin pasarse
+        if len(self.velocidades) != len(self.medidas):
+            self.velocidades = [0.0] * len(self.medidas)
+        for i, m in enumerate(self.medidas):
+            objetivo = m[0] or 0.0
+            v = self.velocidades[i] + (omega * omega * (objetivo - self.valores[i]) - 2 * omega * self.velocidades[i]) * dt
+            self.velocidades[i] = v
+            self.valores[i] += v * dt
+            if abs(objetivo - self.valores[i]) <= m[1] * 1e-3 and abs(v) <= m[1] * 1e-2:
+                self.valores[i], self.velocidades[i] = objetivo, 0.0
+            else:
+                listo = False
+        for i, objetivo in enumerate(self.celdas_objetivo[:len(self.celdas)]):
+            self.celdas[i] += (objetivo - self.celdas[i]) * min(1.0, dt * 7.5)
+        animado = self.estilo in monitores.ANIMADOS
+        if animado and self.medidas:
+            frac = (self.valores[0] / self.medidas[0][1]) if self.medidas[0][1] else 0
+            frac = max(0.0, min(1.0, frac))
+            self.fase += dt * (0.04 + 0.5 * frac)
+            self.burbujas += dt * (0.12 + 0.3 * frac)
+            self.latidos += dt * (0.9 + 1.6 * frac)
+            if len(self.fases) != len(self.celdas):
+                self.fases = [i * 0.618 % 1 for i in range(len(self.celdas))]
+            for i, c in enumerate(self.celdas):
+                self.fases[i] += dt * (0.03 + 0.35 * max(0.0, min(1.0, c)))
+            if len(self.avances) != len(self.medidas):
+                self.avances = [0.0] * len(self.medidas)
+            for i, m in enumerate(self.medidas):
+                fm = max(0.0, min(1.0, self.valores[i] / m[1])) if m[1] else 0.0
+                self.avances[i] += dt * (0.04 + 0.5 * fm)
+            mueve = min(1.0, abs(self.velocidades[0]) / self.medidas[0][1] * 3) if self.medidas[0][1] else 0
+            self.agitacion += (mueve - self.agitacion) * min(1.0, dt * (6 if mueve > self.agitacion else 1.2))
+        fps = monitores.FPS.get(self.estilo)
+        if not fps or ahora - self._dibujado >= 1 / fps - 0.004:
+            self._dibujado = ahora
+            self.queue_draw()
+        if self.estilo in monitores.DE_FONDO and self.tarjeta:
+            self.tarjeta.queue_draw()
+        if (listo and not animado) or not self.get_mapped():
+            self._animando = None
+            return False
+        return True
+
+    def dibujar(self, _w, cr):
+        if self.estado.get("_estilo") != self.estilo:
+            self.estado = {"_estilo": self.estilo}
+        medidas = [{"frac": max(0.0, min(1.0, v / tope)) if tope else 0.0, "valor": v, "color": color,
+                    "nombre": _(nombre),
+                    "texto": (formato(v) if callable(formato) else formato.format(v)) if valor is not None else "—"}
+                   for v, (valor, tope, color, nombre, formato) in zip(self.valores, self.medidas)]
+        if not self.otras:
+            medidas = medidas[:1]
+        monitores.dibujar(LienzoCairo(self, cr), paleta(), self.get_allocated_width(),
+                          self.get_allocated_height(), medidas, self.estilo, self.alinear, self.cifra,
+                          {"t": time.monotonic(), "fase": self.fase, "burbujas": self.burbujas,
+                           "agitacion": self.agitacion, "fases": self.fases, "latidos": self.latidos, "avances": self.avances,
+                           "desde": time.monotonic() - self.ultima, "intervalo": INTERVALO,
+                           "edades": [(time.monotonic() - t) / INTERVALO for t in self.llegadas],
+                           "latido": self.latido, "estado": self.estado, "celdas": self.celdas,
+                           "nombres": self.nombres, "historial": list(self.historial),
+                           "serie": list(self.serie)})
 
 
 class BarrasNucleos(Dibujo):
@@ -1372,6 +1546,7 @@ MAX_SENSORES = 40
 # ---------------------------------------------------------------------------
 
 CSS = """
+.hw { font-feature-settings: "tnum"; }
 window.hw, window.hw.background { background-color: transparent; background-image: none; }
 .hw scrolledwindow, .hw viewport { background-color: transparent; border: none; }
 .hw .titulo { color: #aab3c2; font-weight: bold; font-size: 10pt; letter-spacing: 1px; }
@@ -1441,35 +1616,9 @@ def css_tema(t):
     return css
 
 
-_imagenes = {}
-
-
-def imagen_cubriendo(ruta, ancho, alto):
-    """La imagen escalada para cubrir ancho x alto (recortando lo que sobre), con caché."""
-    clave = (ruta, ancho, alto)
-    if clave not in _imagenes:
-        if len(_imagenes) > 40:
-            _imagenes.clear()
-        try:
-            img = GdkPixbuf.Pixbuf.new_from_file(ruta)
-            escala = max(ancho / img.get_width(), alto / img.get_height())
-            pw, ph = max(1, round(img.get_width() * escala)), max(1, round(img.get_height() * escala))
-            img = img.scale_simple(pw, ph, GdkPixbuf.InterpType.BILINEAR)
-            _imagenes[clave] = img.new_subpixbuf((pw - ancho) // 2, (ph - alto) // 2, min(ancho, pw), min(alto, ph))
-        except (GLib.Error, ValueError, ZeroDivisionError):
-            _imagenes[clave] = None
-    return _imagenes[clave]
-
-
 def pintar_fondo(cr, p, w, h, opacidad, prefijo=""):
-    """Fondo según el tema: imagen (si hay) y encima el color o el degradado.
+    """Fondo según el tema: el color o el degradado.
     `prefijo` = "panel_" para el fondo del panel entero."""
-    imagen = p.get(prefijo + "imagen")
-    if imagen and w > 0 and h > 0:
-        pb = imagen_cubriendo(imagen, int(w), int(h))
-        if pb:
-            Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
-            cr.paint_with_alpha(p[prefijo + "imagen_opacidad"] * opacidad)
     alfa = p[prefijo + "opacidad"] * opacidad
     color = hex_rgb(p[prefijo + "fondo"])
     if not prefijo and p["degradado"]:
@@ -1504,6 +1653,7 @@ class Tarjeta(Gtk.EventBox):
         self.radio = RADIO
         self.ventana = None        # VentanaWidget cuando está suelta en el escritorio
         self._estira = False       # ya hay un elemento que absorbe la altura sobrante
+        self.liquido = None        # VistaMonitor con estilo "liquido": la tarjeta es su recipiente
         self.prescindibles = []    # lo que se quita si la tarjeta es muy baja (ver add_w)
         self._ajuste = None
         self.brillo = 1.0          # del neón (baja cuando parpadea)
@@ -1645,14 +1795,28 @@ class Tarjeta(Gtk.EventBox):
         w, h = self.get_allocated_width(), self.get_allocated_height()
         m = self.margen_neon()
         x, y, cw, ch = m + 0.5, m + 0.5, w - 2 * m - 1, h - 2 * m - 1
+        if not self.sin_fondo():
+            cr.save()
+            rect_redondeado(cr, x, y, cw, ch, self.radio)
+            cr.clip()
+            cr.translate(m, m)
+            pintar_fondo(cr, p, w - 2 * m, h - 2 * m, self.opacidad)
+            cr.restore()
+        v = self.liquido
+        if v and v.medidas and v.medidas[0][1]:
+            cr.save()
+            rect_redondeado(cr, x, y, cw, ch, self.radio)
+            cr.clip()
+            cr.translate(m, m)
+            segunda = None
+            if v.otras and len(v.medidas) > 1 and v.medidas[1][1] and len(v.valores) > 1:
+                segunda = (v.valores[1] / v.medidas[1][1], COLORES.get(v.medidas[1][2], COLORES["naranja"]))
+            monitores.fondo_liquido(LienzoCairo(self, cr), w - 2 * m, h - 2 * m, v.valores[0] / v.medidas[0][1],
+                                    COLORES.get(v.medidas[0][2], COLORES["azul"]), time.monotonic(),
+                                    v.burbujas, v.agitacion, segunda)
+            cr.restore()
         if self.sin_fondo():
             return False
-        cr.save()
-        rect_redondeado(cr, x, y, cw, ch, self.radio)
-        cr.clip()
-        cr.translate(m, m)
-        pintar_fondo(cr, p, w - 2 * m, h - 2 * m, self.opacidad)
-        cr.restore()
         if p["neon"]:
             self.pintar_neon(cr, p, x, y, cw, ch)
         elif p["borde_grosor"] > 0:
@@ -2446,11 +2610,13 @@ class VentanaConfig(Gtk.Window):
                ("ajustes", "Opciones de widgets", "Lo que muestra y hace cada widget. Cuáles se ven se elige "
                                                   "con el clic derecho › Widgets visibles."),
                ("titulos", "Títulos y fondos", "Quita el título o el fondo a los widgets que quieras."),
+               ("monitores", "Monitores", "CPU, cada GPU, Memoria, Red y Almacenamiento, cada uno a tu gusto: su estilo, dónde va el "
+                                          "dibujo y qué se ve. «Clásico» es la cifra grande con su gráfica."),
                ("widgets", "Estilo · modo widgets", "Cómo se ven los widgets sueltos por el escritorio."),
                ("panel", "Estilo · modo panel", "Cómo se ve el modo panel: el velo que cubre la pantalla y "
                                                 "sus tarjetas."),
                ("disposicion", "Disposición y tamaño", "Dónde se colocan los widgets y de qué tamaño."),
-               ("packs", "Packs", None),
+               ("packs", "Tienda", None),
                ("general", "General", "Idioma, arranque, lecturas y actualizaciones."))
 
     def __init__(self, app):
@@ -2554,24 +2720,6 @@ class VentanaConfig(Gtk.Window):
         sw.connect("notify::active", lambda w, _p: self.cambiar(seccion, clave, w.get_active()))
         return sw
 
-    def imagen(self, seccion, clave):
-        fila = caja(False, 6)
-        elegir = Gtk.FileChooserButton(title=_("Elegir imagen"), action=Gtk.FileChooserAction.OPEN)
-        filtro = Gtk.FileFilter()
-        filtro.set_name(_("Imágenes"))
-        filtro.add_pixbuf_formats()
-        elegir.add_filter(filtro)
-        elegir.set_width_chars(18)
-        actual = self.app.tema[seccion][clave]
-        if actual and os.path.exists(actual):
-            elegir.set_filename(actual)
-        elegir.connect("file-set", lambda b: self.cambiar(seccion, clave, b.get_filename() or ""))
-        quitar = Gtk.Button(label=_("Quitar"))
-        quitar.connect("clicked", lambda _b: (elegir.unselect_all(), self.cambiar(seccion, clave, "")))
-        fila.pack_start(elegir, False, False, 0)
-        fila.pack_start(quitar, False, False, 0)
-        return fila
-
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, cont):
@@ -2635,7 +2783,7 @@ class VentanaConfig(Gtk.Window):
         cr.set_source_rgb(0.35, 0.25, 0.4)  # algo detrás, como el fondo de pantalla
         cr.paint()
         pintar_fondo(cr, t["panel"], ancho, alto, 1.0, "panel_")
-        p = dict(t["widgets"], imagen="")
+        p = t["widgets"]
         cr.save()
         cr.translate(10, 10)
         rect_redondeado(cr, 0, 0, ancho - 20, alto - 20, min(p["radio"], 10))
@@ -2704,13 +2852,6 @@ class VentanaConfig(Gtk.Window):
             (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
         self.fila(lista, "Color de los tubos Nixie", nixie)
 
-        lista = self.grupo(cont, "Multimedia")
-        sw = Gtk.Switch(active=app.config.get("mantener_volumen", True))
-        sw.connect("notify::active", lambda w, _p: app.cambiar_mantener_volumen(w.get_active()))
-        self.fila(lista, "Mantener el volumen de cada app", sw,
-                  "Si cambias el volumen de una app aquí y ella pone otro al empezar otra canción "
-                  "(Firefox lo hace), MoonDeck vuelve a poner el tuyo.")
-
         packs.llamar(app.packs, "ajustes", self, cont)
 
     def pagina_titulos(self, cont):
@@ -2729,6 +2870,80 @@ class VentanaConfig(Gtk.Window):
             botones.pack_start(fondo, False, False, 0)
             self.fila(lista, t.nombre_menu, botones)
 
+    def pagina_monitores(self, cont):
+        app = self.app
+        for t in app.tarjetas:
+            if t.clave in app.vistas:
+                self.seccion_monitor(cont, t)
+
+    def seccion_monitor(self, cont, tarjeta):
+        """Un monitor: estilo, alineación del dibujo y una casilla por cada parte."""
+        app, clave = self.app, tarjeta.clave
+        o = app.opciones_monitor(clave)
+        lista = self.grupo(cont, tarjeta.nombre_menu)
+        estilo = Gtk.ComboBoxText()
+        for c, nombre in monitores.estilos_para(app.vistas[clave]["tipo"], o["estilo"]):
+            estilo.append(c, _(nombre))
+        estilo.set_active_id(o["estilo"])
+        self.fila(lista, "Estilo", estilo, "Las cifras van contando hasta cada lectura en vez de saltar")
+        # Alinear: tres botones unidos, como en un editor de texto.
+        alinear = caja(False, 0)
+        alinear.get_style_context().add_class("linked")
+        botones = []
+        for valor, icono, nombre in ALINEACIONES:
+            b = Gtk.RadioButton.new_from_widget(botones[0] if botones else None)
+            b.set_mode(False)  # botón, no bolita
+            b.set_image(Gtk.Image.new_from_icon_name(icono, Gtk.IconSize.BUTTON))
+            b.set_tooltip_text(_(nombre))
+            b.set_active(o["alinear"] == valor)
+            b.connect("toggled", lambda w, a=valor: w.get_active() and app.cambiar_monitor(clave, alinear=a))
+            alinear.pack_start(b, False, False, 0)
+            botones.append(b)
+        self.fila(lista, "Alinear el dibujo", alinear, "Dónde va el dibujo si le sobra ancho")
+        latido = Gtk.Switch(active=o["latido"])
+        latido.connect("notify::active", lambda w, _p: app.cambiar_monitor(clave, latido=w.get_active()))
+        self.fila(lista, "Latido con cada lectura", latido, "Solo en la esfera de partículas")
+        # Qué se ve: casillas en dos columnas.
+        rejilla = Gtk.Grid(column_spacing=24, row_spacing=6, column_homogeneous=True)
+        casillas = {}
+        quieto = []  # mientras se ponen las casillas desde el código, no cuentan como cambios
+
+        def al_marcar(w, parte):
+            if not quieto:
+                app.cambiar_monitor(clave, parte=parte, ver=w.get_active())
+        for i, (parte, nombre) in enumerate(PARTES_MONITOR[app.vistas[clave]["tipo"]]):
+            cb = Gtk.CheckButton(label=_(nombre))
+            cb.connect("toggled", al_marcar, parte)
+            rejilla.attach(cb, i % 2, i // 2, 1, 1)
+            casillas[parte] = cb
+        marco = Gtk.Box(margin_start=12, margin_end=12, margin_top=8, margin_bottom=10)
+        marco.pack_start(rejilla, True, True, 0)
+        fila = Gtk.ListBoxRow(activatable=False, selectable=False)
+        cont_fila = caja(True, 8)
+        titulo = Gtk.Label(label=_("Mostrar"), xalign=0, margin_start=12, margin_top=8)
+        cont_fila.pack_start(titulo, False, False, 0)
+        cont_fila.pack_start(marco, False, False, 0)
+        fila.add(cont_fila)
+        lista.add(fila)
+
+        def al_cambiar_estilo(w):
+            app.cambiar_monitor(clave, estilo=w.get_active_id())
+            refrescar()
+
+        def refrescar():
+            # Con "Clásico" no hay dibujo: ni alinear ni medidas dentro de él.
+            dibujo = app.opciones_monitor(clave)["estilo"] != "clasico"
+            alinear.set_sensitive(dibujo)
+            latido.set_sensitive(app.opciones_monitor(clave)["estilo"] == "esfera")
+            casillas["otras"].set_sensitive(dibujo)
+            ocultos = app.ocultos_monitor(clave)
+            quieto.append(1)
+            for parte, cb in casillas.items():
+                cb.set_active(parte not in ocultos)
+            quieto.clear()
+        estilo.connect("changed", al_cambiar_estilo)
+        refrescar()
+
     def pagina_tarjetas(self, cont, seccion):
         lista = self.grupo(cont, "Fondo")
         self.fila(lista, "Color", self.color(seccion, "fondo"))
@@ -2738,10 +2953,6 @@ class VentanaConfig(Gtk.Window):
         self.fila(lista, "Dirección del degradado", self.deslizador(seccion, "angulo", 0, 360, 1, "°"))
         self.fila(lista, "Desenfoque (cristal)", self.interruptor(seccion, "cristal"),
                   _("Desenfoca lo que hay detrás") + (_(" de las tarjetas") if seccion == "widgets" else _(" del panel")))
-        lista = self.grupo(cont, "Imagen de fondo", "Se ve debajo del color: baja la opacidad del fondo para "
-                                                   "que se vea más.")
-        self.fila(lista, "Imagen", self.imagen(seccion, "imagen"))
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(seccion, "imagen_opacidad", 0, 100, 100))
         lista = self.grupo(cont, "Borde y esquinas")
         self.fila(lista, "Color del borde", self.color(seccion, "borde"))
         self.fila(lista, "Opacidad del borde", self.deslizador(seccion, "borde_opacidad", 0, 100, 100))
@@ -2761,8 +2972,6 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
-        self.fila(lista, "Imagen", self.imagen(s, "panel_imagen"), "Una foto o un fondo para todo el panel")
-        self.fila(lista, "Opacidad de la imagen", self.deslizador(s, "panel_imagen_opacidad", 0, 100, 100))
         self.pagina_tarjetas(cont, s)
 
     def numero(self, clave, minimo, maximo, paso, digitos, fn):
@@ -2821,11 +3030,11 @@ class VentanaConfig(Gtk.Window):
         self.construir()
 
     def pagina_packs(self, cont):
-        """Los packs de widgets: borrar los que no se usan y volver a descargarlos de GitHub."""
+        """La tienda: borrar los widgets que no se usan y volver a descargarlos de GitHub."""
         app = self.app
         g = app.gestor_packs
-        lista = self.grupo(cont, "Packs de widgets", "Borra los que no uses; puedes volver a descargarlos de "
-                                                     "GitHub cuando quieras. Se aplica al reiniciar MoonDeck.")
+        lista = self.grupo(cont, "Widgets", "Instala solo los que uses: bórralos cuando quieras y vuelve a "
+                                             "descargarlos de GitHub. Se aplica al reiniciar MoonDeck.")
         for ident, nombre, texto, widgets, _x in packs.CATALOGO:
             if not packs.borrable(ident):
                 control = Gtk.Label(label=_("Incluido"))
@@ -2842,7 +3051,8 @@ class VentanaConfig(Gtk.Window):
                 control = Gtk.Button(label=_("Descargar"), sensitive=not g.ocupado)
                 control.get_style_context().add_class("suggested-action")
                 control.connect("clicked", lambda _b, i=ident: self.descargar_pack(i))
-            self.fila(lista, nombre, control, _(texto) + "\n" + " · ".join(_(w) for w in widgets))
+            self.fila(lista, nombre, control, _(texto) + ("" if widgets == (nombre,) else
+                                                      "\n" + " · ".join(_(w) for w in widgets)))
         aviso = (_("No se pudo descargar: {error}").format(error=g.error) if g.estado == "error" else
                  _("Reinicia MoonDeck para ver los cambios.") if g.cambiado else "")
         if aviso:
@@ -2999,7 +3209,7 @@ class VentanaConfig(Gtk.Window):
 # ---------------------------------------------------------------------------
 
 # Los packs de widgets (pack_*.py): sus métodos se añaden a Monitor.
-PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log)
+PACKS = packs.cargar(os.path.dirname(os.path.abspath(__file__)), log, CONFIG)
 
 
 class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
@@ -3038,7 +3248,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.areas = {}      # monitor -> (ancho, alto) del área libre
         self.reproductores = Reproductores()
         self.mezclador = Mezclador()
-        self.mezclador.mantener_volumen(self.config.get("mantener_volumen", True))
         self.dispositivos = Dispositivos()
         self.escritorios = Escritorios()
         self._rueda, self._rueda_t, self._rueda_ult = 0.0, 0.0, 0.0
@@ -3097,57 +3306,82 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def construir(self, s):
         # CPU
+        # CPU, Memoria y GPU: un dibujo (VistaMonitor, oculto en "Clásico") y sus partes.
+        self.vistas = {}  # clave de la tarjeta -> {"tipo", "vista", "partes": {id: [widgets]}}
         c = self.tarjeta("cpu", "CPU")
-        c.add_w(etiqueta(self.sampler.cpu, "dim"))
+        modelo = c.add_w(etiqueta(self.sampler.cpu, "dim"))
+        vista = c.add_w(VistaMonitor(), expand=False)
         self.cpu_big = c.add_w(etiqueta("", "grande"))
         self.cpu_sub = c.add_w(etiqueta())
         self.cpu_temp = c.add_w(etiqueta())
         self.cpu_graf = c.add_w(Grafica(["azul", "naranja"]), prescindible=9)
-        c.add_w(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")), prescindible=2)
+        ley = c.add_w(leyenda(("Uso %", "azul"), ("Temp °C", "naranja")), prescindible=2)
         self.cpu_nucleos = c.add_w(BarrasNucleos(len(s["cores"])), prescindible=3)
         self.uptime = c.add_w(etiqueta("", "dim"), prescindible=1)
+        self.vistas["cpu"] = {"tipo": "cpu", "vista": vista, "partes": {
+            "modelo": [modelo], "grande": [self.cpu_big], "sub": [self.cpu_sub], "temp": [self.cpu_temp],
+            "grafica": [self.cpu_graf], "leyenda": [ley], "nucleos": [self.cpu_nucleos], "uptime": [self.uptime]}}
 
         # Memoria
         c = self.tarjeta("memoria", "Memoria")
+        vista = c.add_w(VistaMonitor(), expand=False)
         self.mem_big = c.add_w(etiqueta("", "grande"))
         self.mem_sub = c.add_w(etiqueta())
         self.mem_barra = c.add_w(Barra())
         self.swap_sub = c.add_w(etiqueta(), prescindible=2)
         self.swap_barra = c.add_w(Barra(), prescindible=2)
         self.mem_graf = c.add_w(Grafica(["morado", "naranja"]), prescindible=9)
-        c.add_w(leyenda(("RAM %", "morado"), ("Swap %", "naranja")), prescindible=1)
+        ley = c.add_w(leyenda(("RAM %", "morado"), ("Swap %", "naranja")), prescindible=1)
+        self.vistas["memoria"] = {"tipo": "memoria", "vista": vista, "partes": {
+            "grande": [self.mem_big], "sub": [self.mem_sub], "barra": [self.mem_barra],
+            "swap": [self.swap_sub, self.swap_barra], "grafica": [self.mem_graf], "leyenda": [ley]}}
 
         # Una tarjeta por GPU
         self.gpus = {}
         for g in s["gpus"]:
             c = self.tarjeta(f"gpu-{g['id']}", "GPU")
             c.nombre_menu = f"GPU · {g['name']}"
-            c.add_w(etiqueta(g["name"], "dim"))
+            modelo = c.add_w(etiqueta(g["name"], "dim"))
+            vista = c.add_w(VistaMonitor(), expand=False)
             w = {"big": c.add_w(etiqueta("", "grande")), "temp": c.add_w(etiqueta()),
                  "sub": c.add_w(etiqueta(), prescindible=3), "sub2": c.add_w(etiqueta(), prescindible=2),
-                 "graf": c.add_w(Grafica(["verde", "azul"]), prescindible=9)}
-            c.add_w(leyenda(("Uso %", "verde"), ("VRAM %", "azul")), prescindible=1)
+                 "graf": c.add_w(Grafica(["verde", "azul"]), prescindible=9), "vista": vista}
+            ley = c.add_w(leyenda(("Uso %", "verde"), ("VRAM %", "azul")), prescindible=1)
+            self.vistas[c.clave] = {"tipo": "gpu", "vista": vista, "partes": {
+                "modelo": [modelo], "grande": [w["big"]], "temp": [w["temp"]], "sub": [w["sub"]],
+                "sub2": [w["sub2"]], "grafica": [w["graf"]], "leyenda": [ley]}}
             self.gpus[g["id"]] = w
 
         # Red
         c = self.tarjeta("red", "Red")
+        vista = c.add_w(VistaMonitor(), expand=False)
         self.red_big = c.add_w(etiqueta("", "grande"))
         self.red_sub = c.add_w(etiqueta())
         self.red_graf = c.add_w(Grafica(["verde", "morado"], maximo=None), prescindible=9)
-        c.add_w(leyenda(("Bajada", "verde"), ("Subida", "morado")), prescindible=1)
+        ley = c.add_w(leyenda(("Bajada", "verde"), ("Subida", "morado")), prescindible=1)
+        # Escala de los dibujos (la red no tiene tope): el pico del último minuto, uno por sentido,
+        # que la subida suele ser mucho menor que la bajada y con la misma escala ni se vería.
+        self.red_picos = (collections.deque(maxlen=60), collections.deque(maxlen=60))
+        self.vistas["red"] = {"tipo": "red", "vista": vista, "partes": {
+            "grande": [self.red_big], "sub": [self.red_sub], "grafica": [self.red_graf], "leyenda": [ley]}}
 
         # Discos
         c = self.tarjeta("discos", "Almacenamiento")
+        vista = c.add_w(VistaMonitor(), expand=False)
         self.disco_big = c.add_w(etiqueta("", "grande"))
         self.disco_sub = c.add_w(etiqueta())
         self.disco_graf = c.add_w(Grafica(["azul", "naranja"], maximo=None), prescindible=9)
-        c.add_w(leyenda(("Lectura", "azul"), ("Escritura", "naranja")), prescindible=7)
+        ley = c.add_w(leyenda(("Lectura", "azul"), ("Escritura", "naranja")), prescindible=7)
+        self.disco_picos = (collections.deque(maxlen=60), collections.deque(maxlen=60))  # como en la red
         self.particiones = {}
         partes = s["parts"][:6]
         for i, (mount, *_x) in enumerate(partes):
             # Si no caben, se van quitando las últimas particiones.
             n = len(partes) - i
             self.particiones[mount] = (c.add_w(etiqueta(), prescindible=n), c.add_w(Barra(), prescindible=n))
+        self.vistas["discos"] = {"tipo": "discos", "vista": vista, "partes": {
+            "grande": [self.disco_big], "sub": [self.disco_sub], "grafica": [self.disco_graf], "leyenda": [ley],
+            "particiones": [w for par in self.particiones.values() for w in par]}}
 
         # Multimedia: lo que suena y volumen por app
         c = self.tarjeta("multimedia", "Multimedia")
@@ -3242,6 +3476,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
         # Lo de los packs (pack_*.py)
         packs.llamar(self.packs, "construir", self, s)
+
+        for clave in self.vistas:
+            self.poner_monitor(clave)
 
     # --- escritorios virtuales -------------------------------------------------------
 
@@ -3637,6 +3874,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.item(sub, "Aplicar a todos los widgets", lambda: self.cambiar_opacidad(self.tarjetas, tarjeta.opacidad))
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
+        if tarjeta.clave in self.vistas:
+            self.menu_monitor(tarjeta.clave, menu)
         if tarjeta.clave == "calendario":
             sub = self.submenu(menu, "La semana empieza en")
             for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
@@ -3737,6 +3976,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         temp = f"{t:.1f} °C" if t is not None else "—"
         poner_marcado(self.cpu_temp, f'<span foreground="{color_temp(t)}">' + _("Temperatura {t}").format(t=temp) + "</span>")
         self.cpu_graf.push(s["cpu"], t)
+        self.vistas["cpu"]["vista"].poner([(s["cpu"], 100, "azul", "Uso", "{:.0f} %"),
+                                           (t, 100, "naranja", "Temp", "{:.0f} °C")], s["cores"])
         self.cpu_nucleos.set(s["cores"])
         up = int(s["uptime"])
         poner_texto(self.uptime, _("{n} hilos · Encendido {tiempo}").format(
@@ -3751,6 +3992,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         poner_texto(self.swap_sub, f"Swap {fmt_bytes(su)} / {fmt_bytes(st)}" if st else _("Sin swap"))
         self.swap_barra.set(sp if st else 0)
         self.mem_graf.push(pct, sp if st else 0)
+        self.vistas["memoria"]["vista"].poner([(pct, 100, "morado", "RAM", "{:.0f} %")]
+                                        + ([(sp, 100, "naranja", "Swap", "{:.0f} %")] if st else []))
 
         # GPUs
         for g in s["gpus"]:
@@ -3775,18 +4018,37 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 partes.append(_("Ventilador {n} %").format(n=f"{g['fan']:.0f}"))
             poner_texto(w["sub2"], " · ".join(partes))
             w["graf"].push(g["util"], vram_pct)
+            w["vista"].poner([(g["util"], 100, "verde", "Uso", "{:.0f} %")]
+                             + ([(vram_pct, 100, "azul", "VRAM", "{:.0f} %")] if g["vram"] else [])
+                             + [(g["temp"], 100, "naranja", "Temp", "{:.0f} °C")])
 
         # Red
         rx, tx = s["net"]
         poner_texto(self.red_big, f"↓ {fmt_bytes(rx, True)}")
         poner_texto(self.red_sub, f"↑ {fmt_bytes(tx, True)}")
         self.red_graf.push(rx, tx)
+        # Escala: el pico de los últimos 60 s (como la gráfica), con un mínimo para que en reposo
+        # no parezca que va a tope.
+        topes = []
+        for picos, v in zip(self.red_picos, (rx, tx)):
+            picos.append(v)
+            topes.append(max(64 * 1024, max(picos) * 1.1))
+        velocidad = lambda v: fmt_bytes(v, True)  # noqa: E731
+        self.vistas["red"]["vista"].poner([(rx, topes[0], "verde", "Bajada", velocidad),
+                                           (tx, topes[1], "morado", "Subida", velocidad)])
 
         # Discos
         r, w_ = s["disk_io"]
         poner_texto(self.disco_big, _("L {v}").format(v=fmt_bytes(r, True)))
         poner_texto(self.disco_sub, _("E {v}").format(v=fmt_bytes(w_, True)))
         self.disco_graf.push(r, w_)
+        topes = []
+        for picos, v in zip(self.disco_picos, (r, w_)):
+            picos.append(v)
+            topes.append(max(256 * 1024, max(picos) * 1.1))
+        velocidad = lambda v: fmt_bytes(v, True)  # noqa: E731
+        self.vistas["discos"]["vista"].poner([(r, topes[0], "azul", "Lectura", velocidad),
+                                              (w_, topes[1], "naranja", "Escritura", velocidad)])
         for mount, used, total, pct in s["parts"]:
             if mount in self.particiones:
                 lb, barra = self.particiones[mount]
@@ -3822,6 +4084,88 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.reloj.ajustar_minimo()
         self.ajustar_alturas()
         self.guardar_config()
+
+    def opciones_monitor(self, clave):
+        """{"estilo", "alinear", "ocultos"} de un monitor; "ocultos" None = lo de serie del estilo."""
+        o = self.config.setdefault("monitores", {}).setdefault(clave, {})
+        o.setdefault("estilo", self.config.get("estilos_monitor", {}).get(clave, "clasico"))
+        o.setdefault("alinear", 0.5)
+        o.setdefault("ocultos", None)
+        o.setdefault("latido", True)  # la esfera de partículas late con cada lectura
+        if o["estilo"] not in monitores.CLAVES:
+            o["estilo"] = "clasico"
+        return o
+
+    def ocultos_monitor(self, clave):
+        o = self.opciones_monitor(clave)
+        if o["ocultos"] is not None:
+            return set(o["ocultos"])
+        return set(OCULTOS_CON_DIBUJO[self.vistas[clave]["tipo"]]) if o["estilo"] != "clasico" else set()
+
+    def cambiar_monitor(self, clave, estilo=None, alinear=None, parte=None, ver=None, latido=None):
+        o = self.opciones_monitor(clave)
+        if estilo is not None:
+            o["estilo"] = estilo
+        if latido is not None:
+            o["latido"] = latido
+        if alinear is not None:
+            o["alinear"] = alinear
+        if parte is not None:
+            ocultos = self.ocultos_monitor(clave)
+            (ocultos.discard if ver else ocultos.add)(parte)
+            o["ocultos"] = sorted(ocultos)
+        self.guardar_config()
+        self.poner_monitor(clave)
+
+    def poner_monitor(self, clave):
+        """Clásico: cifra grande y gráfica. Con dibujo, él ocupa el sitio sobrante (y lleva la cifra)."""
+        v = self.vistas[clave]
+        o = self.opciones_monitor(clave)
+        ocultos = self.ocultos_monitor(clave)
+        vista = v["vista"]
+        vista.estilo, vista.alinear = o["estilo"], o["alinear"]
+        vista.tarjeta = vista.get_ancestor(Tarjeta)
+        if vista.tarjeta:
+            vista.tarjeta.liquido = vista if vista.estilo in monitores.DE_FONDO else None
+            vista.tarjeta.queue_draw()
+        dibujo = vista.estilo != "clasico"
+        vista.cifra, vista.otras = "grande" not in ocultos, "otras" not in ocultos
+        vista.latido = o["latido"]
+        visibles = [(vista, dibujo)]
+        for parte, widgets in v["partes"].items():
+            ver = parte not in ocultos and not (parte == "grande" and dibujo)
+            visibles += [(w, ver) for w in widgets]
+        for w, ver in visibles:
+            w._quitado = False      # que la tarjeta no lo vuelva a mostrar al hacer sitio
+            w.set_no_show_all(not ver)
+            w.set_visible(ver)
+        caja_t = vista.get_parent()
+        caja_t.child_set_property(vista, "expand", dibujo)
+        for graf in v["partes"]["grafica"]:
+            caja_t.child_set_property(graf, "expand", not dibujo)
+        vista.arrancar()
+        self.ajustar_alturas()
+
+    def menu_monitor(self, clave, menu):
+        o = self.opciones_monitor(clave)
+        ocultos = self.ocultos_monitor(clave)
+        sub = self.submenu(menu, "Estilo del monitor")
+        for estilo, nombre in monitores.estilos_para(self.vistas[clave]["tipo"], o["estilo"]):
+            self.item(sub, nombre, lambda e=estilo: self.cambiar_monitor(clave, estilo=e), o["estilo"] == estilo)
+        if o["estilo"] != "clasico":
+            sub = self.submenu(menu, "Alinear el dibujo")
+            for valor, _icono, nombre in ALINEACIONES:
+                self.item(sub, nombre, lambda a=valor: self.cambiar_monitor(clave, alinear=a), o["alinear"] == valor)
+        if o["estilo"] == "esfera":
+            self.item(menu, "Latido con cada lectura", lambda: self.cambiar_monitor(clave, latido=not o["latido"]),
+                      o["latido"])
+        sub = self.submenu(menu, "Mostrar")
+        for parte, nombre in PARTES_MONITOR[self.vistas[clave]["tipo"]]:
+            if parte == "otras" and o["estilo"] == "clasico":
+                continue
+            self.item(sub, nombre, lambda p=parte: self.cambiar_monitor(clave, parte=p, ver=p in ocultos),
+                      parte not in ocultos)
+        menu.append(Gtk.SeparatorMenuItem())
 
     def menu_reloj(self, menu):
         o = self.config["reloj"]
@@ -4000,11 +4344,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         if self.modo == "widgets" and not self.manual:
             self.colocar(ignorar_guardadas=True)
         self.guardar_config()
-
-    def cambiar_mantener_volumen(self, activo):
-        self.config["mantener_volumen"] = activo
-        self.guardar_config()
-        self.mezclador.mantener_volumen(activo)
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

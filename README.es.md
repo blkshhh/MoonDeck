@@ -43,7 +43,7 @@ Descarga el zip de tu sistema en [Releases](https://github.com/blkshhh/MoonDeck/
 
 Para actualizar: Configuración > General > "Buscar actualizaciones".
 
-Los widgets van por packs: el **Básico** está siempre; **Hardware**, **Discord**, **Escritorio**, **Ocio** y **Servidor** se pueden borrar en Configuración > Packs y volver a descargar cuando quieras.
+Los widgets **básicos** están siempre; el resto (Sensores, FPS, Test de velocidad, Discord, Aplicaciones, Juegos, Immich, Docker) va por separado en Configuración > Tienda: borra los que no uses y vuelve a descargarlos cuando quieras.
 
 ## Estructura
 
@@ -55,7 +55,7 @@ Los widgets van por packs: el **Básico** está siempre; **Hardware**, **Discord
 | `secretos/` | **No se sube a Git.** `discord_client_secret.txt` con el Client Secret de la aplicación de Discord |
 | `dist/` | **No se sube a Git.** Los zips que genera `construir.sh` |
 
-Cada pack de widgets está en su `pack_<id>.py` (uno en `linux/` y otro en `windows/`); `comun/packs.py` los enumera, los carga y los borra/descarga.
+Cada widget opcional está en su `pack_<id>.py` (uno en `linux/` y otro en `windows/`); `comun/packs.py` los enumera, los carga y los borra/descarga.
 
 ## Generar los zips para repartir
 
@@ -80,6 +80,6 @@ En los dos casos, la configuración se guarda en `~/.config/MoonDeck` (Linux) o 
 
 ## Licencia
 
-MIT. Usa LibreHardwareMonitor (MPL 2.0), PawnIO y PresentMon de Intel (MIT).
+MIT. Usa LibreHardwareMonitor (MPL 2.0), PawnIO y PresentMon de Intel (MIT). El estilo «Globo con viento» usa [«A Windy Day»](https://sketchfab.com/3d-models/a-windy-day-fb78f4cc938144e6902dd5cff354d525) de Loïc Norgeot (CC BY 4.0), reducido a unos miles de puntos.
 
 Los juegos son una adaptación de [2048](https://github.com/gabrielecirulli/2048) de Gabriele Cirulli (MIT) y del juego del dinosaurio de Chromium (BSD de 3 cláusulas, © The Chromium Authors; los dibujos están en `comun/dino_sprite.py`, sacados de [wayou/t-rex-runner](https://github.com/wayou/t-rex-runner)).
