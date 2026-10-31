@@ -28,9 +28,11 @@ def _estilo(arte, acento, texto, sec, fondo, borde, velo, grosor=1):
 
 
 def _columnas(datos, tope, n):
-    """La serie reducida a n puntos: [altura 0-1]."""
+    """Las últimas muestras, una por columna: [altura 0-1]. Si sobran columnas, cada muestra ocupa
+    varias. Nunca se salta muestras: con una nueva, el dibujo se desliza entero en vez de cambiar."""
     datos = list(datos)
-    return [min(datos[round(i * (len(datos) - 1) / max(1, n - 1))] / tope, 1.0) for i in range(n)]
+    repite = -(-n // len(datos))
+    return [min(v / tope, 1.0) for v in datos[-n // repite:] for _i in range(repite)][-n:]
 
 
 def tramos(largo, frac, celda, hueco):
