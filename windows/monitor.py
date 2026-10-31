@@ -115,6 +115,7 @@ EFECTO = "acrilico"   # "acrilico" (cristal de Windows 11) o "ninguno" (fondo os
 # Colores, fondos, bordes...: en el menú > "Configuración…" (se guardan en config.json).
 INTERVALO = 1.0       # segundos entre lecturas
 HISTORIAL = 120       # muestras en las gráficas
+FOTOGRAMA_GRAFICA = 50  # ms entre dibujos de una gráfica mientras se desliza
 ANCHO = 340           # ancho de cada widget
 SEPARACION = 14       # espacio entre widgets al colocarlos
 COLUMNAS = 4
@@ -326,23 +327,44 @@ class Grafica(QWidget):
         self.alto = alto
         self.setMinimumHeight(28)
         self.maximo = maximo
-        self.series = [(COLORES[c], deque([0.0] * HISTORIAL, maxlen=HISTORIAL)) for c in series]
+        # Una muestra de más: la que se va saliendo por la izquierda mientras entra la nueva.
+        self.series = [(COLORES[c], deque([0.0] * (HISTORIAL + 1), maxlen=HISTORIAL + 1)) for c in series]
+        self.t_dato = time.monotonic()
+        self.ritmo = INTERVALO  # segundos entre muestras, medidos
+        self.tope_visto = 1.0
+        self.reloj = QTimer(self)
+        self.reloj.timeout.connect(self._fluir)
+        self.reloj.start(FOTOGRAMA_GRAFICA)
+
+    def _fluir(self):
+        if self.isVisible():
+            self.update()
 
     def push(self, *valores):
         for (_, datos), v in zip(self.series, valores):
             datos.append(v if v is not None else 0.0)
+        ahora = time.monotonic()
+        self.ritmo += (min(ahora - self.t_dato, 6.0) - self.ritmo) * 0.3
+        self.t_dato = ahora
         self.update()
+
+    def fase(self):
+        """Lo que lleva entrada la muestra más nueva (0-1). La gráfica va una muestra por detrás
+        de los datos: así hay a dónde ir y el dibujo se mueve sin parar entre dos lecturas."""
+        return min((time.monotonic() - self.t_dato) / max(self.ritmo, 0.1), 1.0)
 
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         w, h = self.width(), self.height()
+        series = [(rgb(c), d) for c, d in self.series]
         tope = self.maximo
         if tope is None:
-            tope = max((max(d) for _, d in self.series), default=1.0)
-            tope = max(tope * 1.15, 1.0)
+            self.tope_visto += (artes.tope_automatico(series, ARTE.muestras(w)) - self.tope_visto) * 0.2
+            tope = self.tope_visto
+        fase = self.fase()
         if ARTE.dibuja:
-            ARTE.grafica(LienzoQt(self, p), [(rgb(c), d) for c, d in self.series], tope, w, h, paleta())
+            ARTE.grafica(LienzoQt(self, p), series, tope, w, h, paleta(), fase)
             return
 
         p.setPen(Qt.NoPen)
@@ -354,15 +376,18 @@ class Grafica(QWidget):
             y = int(h * i / 4) + 0.5
             p.drawLine(QPointF(0, y), QPointF(w, y))
 
+        recorte = QPainterPath()
+        recorte.addRoundedRect(QRectF(0, 0, w, h), 6, 6)
+        p.setClipPath(recorte)
         paso = w / (HISTORIAL - 1)
         for color, datos in self.series:
-            puntos = [QPointF(i * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
+            puntos = [QPointF((i - fase) * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
             linea = QPainterPath(puntos[0])
             for pt in puntos[1:]:
                 linea.lineTo(pt)
             relleno = QPainterPath(linea)
-            relleno.lineTo(w, h)
-            relleno.lineTo(0, h)
+            relleno.lineTo(puntos[-1].x(), h)
+            relleno.lineTo(puntos[0].x(), h)
             relleno.closeSubpath()
             c = QColor(color)
             c.setAlpha(40)

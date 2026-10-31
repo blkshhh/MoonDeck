@@ -27,12 +27,21 @@ def _estilo(arte, acento, texto, sec, fondo, borde, velo, grosor=1):
             "panel": dict(temas.POR_DEFECTO["panel"], **tarjeta, panel_fondo=velo, panel_opacidad=0.92)}
 
 
-def _columnas(datos, tope, n):
-    """Las últimas muestras, una por columna: [altura 0-1]. Si sobran columnas, cada muestra ocupa
-    varias. Nunca se salta muestras: con una nueva, el dibujo se desliza entero en vez de cambiar."""
+def _columnas(datos, tope, n, paso, fase):
+    """Las últimas muestras, una por columna de `paso` píxeles: [(x, altura 0-1)]. Si sobran
+    columnas, cada muestra ocupa varias. Nunca se salta muestras: con una nueva, el dibujo se
+    desliza entero en vez de cambiar. `fase` (0-1) es lo que lleva entrada la muestra más nueva,
+    que empieza fuera, por la derecha: por eso sobran columnas por ese lado."""
     datos = list(datos)
-    repite = -(-n // len(datos))
-    return [min(v / tope, 1.0) for v in datos[-n // repite:] for _i in range(repite)][-n:]
+    repite = -(-(n + 1) // len(datos))
+    alturas = [min(v / tope, 1.0) for v in datos[(-n // repite) - 1:] for _i in range(repite)][-(n + repite):]
+    return [((i - repite * fase) * paso, v) for i, v in enumerate(alturas)]
+
+
+def tope_automatico(series, n):
+    """El valor de arriba de una gráfica sin escala fija, mirando solo las n muestras que se ven."""
+    tope = max((max(list(d)[-n:]) for _, d in series), default=1.0)
+    return max(tope * 1.15, 1.0)
 
 
 def tramos(largo, frac, celda, hueco):
@@ -59,6 +68,7 @@ class Arte:
     dibuja = False
     radio_boton = None  # esquinas de los botones y deslizadores (None = las de siempre)
     fuente = None       # su letra, si el usuario no ha elegido otra (ver fuentes.py)
+    paso_grafica = 0    # píxeles por muestra en su gráfica (0: caben todas)
     escala_letra = 1.0  # para las fuentes que se ven pequeñas a igual tamaño
     pixelar = 0         # si no es 0, relojes especiales e iconos se pintan a este tamaño de píxel
     relojes = ()        # (clave, nombre) de sus relojes propios (ver relojes_arte.py)
@@ -77,8 +87,12 @@ class Arte:
     def nucleo(self, l, x, w, h, frac, color, pal):
         """Una columna de BarrasNucleos, en x."""
 
-    def grafica(self, l, series, tope, w, h, pal):
-        """series: [(color, datos)]; tope: el valor de arriba del todo."""
+    def grafica(self, l, series, tope, w, h, pal, fase=1.0):
+        """series: [(color, datos)]; tope: el valor de arriba del todo; fase: ver _columnas."""
+
+    def muestras(self, w):
+        """Cuántas muestras caben en una gráfica de ancho w."""
+        return w // self.paso_grafica + 1 if self.paso_grafica else 1000
 
     def hoy(self, l, cx, cy, r, color):
         """La marca del día de hoy en el calendario."""
@@ -167,6 +181,7 @@ class PixelArt(ConEsferas):
     dibuja = True
     radio_boton = 0
     fuente = "Jersey 15"
+    paso_grafica = 4
     escala_letra = 1.3
     PIXEL = 3    # lo que mide un "píxel" de las esquinas, el borde y las rayas
     pixelar = 2  # los relojes especiales y los iconos del tiempo
@@ -222,14 +237,17 @@ class PixelArt(ConEsferas):
         for y, largo, lleno in tramos(h, frac, 4, 2):
             l.rect(x, h - y - largo, w, largo, 0, color if lleno else _alfa(pal["tenue"], 0.085))
 
-    def grafica(self, l, series, tope, w, h, pal):
+    def grafica(self, l, series, tope, w, h, pal, fase=1.0):
         l.rect(0, 0, w, h, 0, (0, 0, 0, 0.2))
-        b = 4
+        b = self.paso_grafica
+        l.recortar(0, 0, w, h, 0)
         for color, datos in series:
-            for i, v in enumerate(_columnas(datos, tope, max(1, w // b))):
+            for x, v in _columnas(datos, tope, max(1, w // b), b, fase):
+                x //= 1  # siempre en píxeles enteros: es pixel art
                 y = h - b - round(v * (h - b) / b) * b
-                l.rect(i * b, y, b, h - y, 0, _alfa(color, 0.16))
-                l.rect(i * b, y, b, b, 0, color)
+                l.rect(x, y, b, h - y, 0, _alfa(color, 0.16))
+                l.rect(x, y, b, b, 0, color)
+        l.sin_recorte()
 
     def muestra(self, l, t, w, h):
         super().muestra(l, t, w, h)
@@ -244,6 +262,7 @@ class Terminal(ConEsferas):
     dibuja = True
     radio_boton = 0
     fuente = "VT323"
+    paso_grafica = 3
     escala_letra = 1.3
     relojes = (("t_ascii", "Letras ASCII"),)
     recomendados = ("led", "p_cifras", "t_ascii")
@@ -283,16 +302,19 @@ class Terminal(ConEsferas):
         for y, largo, lleno in tramos(h, frac, 2, 2):
             l.rect(x, h - y - largo, w, largo, 0, color if lleno else _alfa(pal["tenue"], 0.07))
 
-    def grafica(self, l, series, tope, w, h, pal):
+    def grafica(self, l, series, tope, w, h, pal, fase=1.0):
         for y in range(0, h, 8):
             for x in range(0, w, 8):
                 l.rect(x, y, 1, 1, 0, _alfa(pal["tenue"], 0.18))
-        paso = 3
+        paso = self.paso_grafica
+        l.recortar(0, 0, w, h, 0)
         for color, datos in series:
-            for i, v in enumerate(_columnas(datos, tope, max(1, w // paso))):
+            for x, v in _columnas(datos, tope, max(1, w // paso), paso, fase):
+                x //= 1
                 y = round((1 - v) * (h - 3))
-                l.rect(i * paso - 1, y - 1, 4, 4, 0, _alfa(color, 0.2))  # el brillo
-                l.rect(i * paso, y, 2, 2, 0, color)
+                l.rect(x - 1, y - 1, 4, 4, 0, _alfa(color, 0.2))  # el brillo
+                l.rect(x, y, 2, 2, 0, color)
+        l.sin_recorte()
 
     def muestra(self, l, t, w, h):
         super().muestra(l, t, w, h)
@@ -307,6 +329,7 @@ class Comic(ConEsferas):
     dibuja = True
     radio_boton = 2
     fuente = "Bangers"
+    paso_grafica = 6
     escala_letra = 1.2
     relojes = (("c_bocadillo", "Bocadillo"), ("c_explosion", "¡Explosión!"), ("c_vinetas", "Tres viñetas"))
     recomendados = ("digital", "analogico", "minimal", "anillos", "p_cifras", "c_bocadillo",
@@ -375,18 +398,19 @@ class Comic(ConEsferas):
             l.rect(x + 1, h - 1 - alto, w - 2, alto, 0, color)
         marco(l, x, 0, w, h, pal["texto"])
 
-    def grafica(self, l, series, tope, w, h, pal):
+    def grafica(self, l, series, tope, w, h, pal, fase=1.0):
         tinta = pal["texto"]
         l.rect(0, 0, w, h, 0, self._papel(tinta))
-        paso = 6
+        n = max(2, w // self.paso_grafica)
+        l.recortar(2, 2, w - 4, h - 4, 0)
         for color, datos in series:
-            alturas = _columnas(datos, tope, max(2, w // paso))
-            puntos = [(2 + i * (w - 4) / (len(alturas) - 1), h - 3 - v * (h - 6)) for i, v in enumerate(alturas)]
-            l.poligono([*puntos, (w - 2, h - 2), (2, h - 2)], _alfa(color, 0.3))
+            puntos = [(2 + x, h - 3 - v * (h - 6)) for x, v in _columnas(datos, tope, n, (w - 4) / (n - 1), fase)]
+            l.poligono([*puntos, (puntos[-1][0], h - 2), (puntos[0][0], h - 2)], _alfa(color, 0.3))
             for a, b in zip(puntos, puntos[1:]):
                 l.linea(*a, *b, 3.2, tinta, True)
             for a, b in zip(puntos, puntos[1:]):
                 l.linea(*a, *b, 1.6, color, True)
+        l.sin_recorte()
         marco(l, 0, 0, w, h, tinta, 2)
 
     def muestra(self, l, t, w, h):
