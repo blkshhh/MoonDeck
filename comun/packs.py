@@ -20,6 +20,7 @@ Un pack_<id>.py puede definir:
     visibles(app, claves)           cuáles de sus tarjetas se ven (para no leer datos de más)
     panel(app, ventana)             al crear la ventana del modo panel
     ajustes_panel(ventana, cont)    su parte de Configuración > Panel
+    fondo_propio(app)               True si el pack pone el fondo del panel (se quita el color)
     salir(app)
 
 Descargar un pack baja el zip del release de esta misma versión y saca solo sus archivos,

@@ -151,6 +151,10 @@ def iniciar(self):
     self._fondo_tam = None
 
 
+def fondo_propio(self):
+    return self.fondos.cfg["activo"]
+
+
 def panel(self, ventana):
     ventana.franja = Franja(self)
     ventana.superposicion.add_overlay(ventana.franja)
@@ -169,15 +173,16 @@ def ajustes_panel(self, cont):
     """Configuración > Panel (self es la ventana)."""
     f = self.app.fondos
     c = f.cfg
-    lista = self.grupo(cont, "Fondos de Unsplash", "Una foto detrás de las tarjetas, bajo el velo del panel.")
+    lista = self.grupo(cont, "Fondos de Unsplash", "Una foto detrás de las tarjetas, en lugar del color del panel.")
     activo = Gtk.Switch(active=c["activo"])
-    activo.connect("notify::active", lambda w, _p: self.app.activar_fondos(w.get_active()))
+    activo.connect("notify::active", lambda w, _p: (self.app.activar_fondos(w.get_active()),
+                                                            GLib.idle_add(self.construir)))
     self.fila(lista, "Activar fondos", activo)
     clave = Gtk.Entry(text=c["clave"], visibility=False, width_chars=24)
-    clave.connect("focus-out-event", lambda w, _e: f.configurar(clave=w.get_text().strip()) or False)
+    clave.connect("changed", lambda w: f.escribir(clave=w.get_text().strip()))
     self.fila(lista, "Clave de acceso", clave, "Gratis en unsplash.com/developers")
     tags = Gtk.Entry(text=c["etiquetas"], width_chars=24)
-    tags.connect("focus-out-event", lambda w, _e: f.configurar(etiquetas=w.get_text()) or False)
+    tags.connect("changed", lambda w: f.escribir(etiquetas=w.get_text()))
     self.fila(lista, "Etiquetas", tags, "Separadas por comas. Cada tanda usa una de ellas.")
     modo = Gtk.ComboBoxText()
     for ident, nombre in fondos.MODOS:

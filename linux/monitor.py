@@ -2463,7 +2463,8 @@ class VentanaPanel(VentanaCristal):
         if self.imagen:
             Gdk.cairo_set_source_pixbuf(cr, self.imagen, 0, 0)
             cr.paint()
-        pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
+        else:
+            pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
         if self.editando:
             cr.set_line_width(1)
             cr.set_dash([4, 4])
@@ -2874,9 +2875,10 @@ class VentanaConfig(Gtk.Window):
 
     def pagina_panel(self, cont):
         s = "panel"
-        lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
-        self.fila(lista, "Color", self.color(s, "panel_fondo"))
-        self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        if not any(packs.llamar(self.app.packs, "fondo_propio", self.app)):
+            lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
+            self.fila(lista, "Color", self.color(s, "panel_fondo"))
+            self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
         packs.llamar(self.app.packs, "ajustes_panel", self, cont)
         self.pagina_tarjetas(cont, s)
 

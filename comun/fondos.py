@@ -19,6 +19,7 @@ UTM = "utm_source=moondeck&utm_medium=referral"
 WEB = f"https://unsplash.com/?{UTM}"
 LOTE = 10          # fotos por petición: el plan gratuito permite 50 peticiones por hora
 HISTORIAL = 30     # las que se recuerdan para ir hacia atrás
+ESPERA_TECLEO = 3  # segundos sin escribir antes de buscar
 MODOS = (("minutos", "Cada X minutos"), ("inicio", "En cada inicio"), ("manual", "Solo a mano"))
 POR_DEFECTO = {"activo": False, "clave": "", "etiquetas": "", "modo": "minutos", "minutos": 15,
                "pausado": False, "historial": [], "indice": -1}
@@ -49,6 +50,7 @@ class Fondos:
         self.tam = (1920, 1080)
         self._proximo = 0.0
         self._sin_guardar = False
+        self._tecleo = 0.0
 
     @property
     def foto(self):
@@ -79,18 +81,28 @@ class Fondos:
         self.guardar()
 
     def configurar(self, **cambios):
-        """Con otra clave o etiquetas, las fotos que aún no se han visto ya no valen."""
-        if {"clave", "etiquetas"} & cambios.keys():
-            del self.cfg["historial"][self.cfg["indice"] + 1:]
         self.cfg.update(cambios)
         self._reprogramar()
         self.guardar()
+
+    def escribir(self, **cambios):
+        """Clave o etiquetas según se teclean: quedan apuntadas al momento, aunque se cierre
+        la página, y la búsqueda nueva espera a que se deje de escribir."""
+        self.cfg.update(cambios)
+        self._sin_guardar = True
+        self._tecleo = time.monotonic()
 
     def comprobar(self):
         """Llamar cada segundo desde la interfaz: cambia de fondo cuando toca y guarda lo pendiente."""
         if self._sin_guardar and not self.ocupado:
             self._sin_guardar = False
             self.guardar()
+        if self._tecleo and time.monotonic() - self._tecleo >= ESPERA_TECLEO and not self.ocupado:
+            self._tecleo = 0.0
+            # Con otra clave o etiquetas, las fotos que aún no se han visto ya no valen.
+            del self.cfg["historial"][self.cfg["indice"] + 1:]
+            if self.cfg["activo"]:
+                self.siguiente()
         if self.restante() == 0 and not self.ocupado:
             self.siguiente()
 

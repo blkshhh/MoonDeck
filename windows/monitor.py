@@ -2312,8 +2312,8 @@ class VentanaPanel(QWidget):
         p.setRenderHint(QPainter.Antialiasing)
         if self.imagen:
             p.drawPixmap(0, 0, self.imagen)
-        # El fondo del tema (color, opacidad) encima del cristal.
-        pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
+        else:  # El fondo del tema (color, opacidad) encima del cristal.
+            pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
         if self.editando:
             # Celdas de la cuadrícula (se ven en los huecos y al mover un widget).
             p.setPen(QPen(tenue(45), 1, Qt.DashLine))
@@ -3091,9 +3091,10 @@ class VentanaConfig(QWidget):
 
     def pagina_panel(self, caja):
         s = "panel"
-        lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
-        self.fila(lista, "Color", self.color(s, "panel_fondo"))
-        self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        if not any(packs.llamar(self.app.packs, "fondo_propio", self.app)):
+            lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
+            self.fila(lista, "Color", self.color(s, "panel_fondo"))
+            self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
         packs.llamar(self.app.packs, "ajustes_panel", self, caja)
         self.pagina_tarjetas(caja, s)
 

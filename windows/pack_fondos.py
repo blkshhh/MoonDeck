@@ -133,6 +133,10 @@ def iniciar(self):
     self._fondo_tam = None
 
 
+def fondo_propio(self):
+    return self.fondos.cfg["activo"]
+
+
 def panel(self, ventana):
     ventana.franja = Franja(self, ventana)
     self.panel = self.panel or ventana
@@ -150,17 +154,17 @@ def ajustes_panel(self, caja):
     """Configuración > Panel (self es la ventana)."""
     f = self.app.fondos
     c = f.cfg
-    lista = self.grupo(caja, "Fondos de Unsplash", "Una foto detrás de las tarjetas, bajo el velo del panel.")
+    lista = self.grupo(caja, "Fondos de Unsplash", "Una foto detrás de las tarjetas, en lugar del color del panel.")
     activo = QCheckBox()
     activo.setChecked(c["activo"])
-    activo.toggled.connect(self.app.activar_fondos)
+    activo.toggled.connect(lambda v: (self.app.activar_fondos(v), QTimer.singleShot(0, self.construir)))
     self.fila(lista, "Activar fondos", activo)
     clave = QLineEdit(c["clave"])
     clave.setEchoMode(QLineEdit.Password)
-    clave.editingFinished.connect(lambda: f.configurar(clave=clave.text().strip()))
+    clave.textChanged.connect(lambda t: f.escribir(clave=t.strip()))
     self.fila(lista, "Clave de acceso", clave, "Gratis en unsplash.com/developers")
     tags = QLineEdit(c["etiquetas"])
-    tags.editingFinished.connect(lambda: f.configurar(etiquetas=tags.text()))
+    tags.textChanged.connect(lambda t: f.escribir(etiquetas=t))
     self.fila(lista, "Etiquetas", tags, "Separadas por comas. Cada tanda usa una de ellas.")
     modo = QComboBox()
     for ident, nombre in fondos.MODOS:
