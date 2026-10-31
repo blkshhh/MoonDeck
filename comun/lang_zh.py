@@ -896,4 +896,9 @@ TEXTOS = {
     'Bizcocho': '饼干',
     'Tizón': '炭炭',
     'Morro': '大嘴',
+    'Bañar': '洗澡',
+    'Esponja': '海绵',
+    'Ducha': '淋浴',
+    'Toalla': '毛巾',
+    'Terminar': '完成',
 }

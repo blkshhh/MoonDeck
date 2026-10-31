@@ -896,4 +896,9 @@ TEXTOS = {
     'Bizcocho': 'Biscuit',
     'Tizón': 'Ember',
     'Morro': 'Snout',
+    'Bañar': 'Bathe',
+    'Esponja': 'Sponge',
+    'Ducha': 'Shower',
+    'Toalla': 'Towel',
+    'Terminar': 'Finish',
 }

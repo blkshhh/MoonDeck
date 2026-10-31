@@ -8,7 +8,7 @@ tocar el esqueleto.
 import ctypes
 from ctypes import byref, c_char_p, c_float, c_int, c_uint
 
-MAX_CAPSULAS, MAX_TINTES = 48, 6
+MAX_CAPSULAS, MAX_TINTES = 100, 30
 gl = ctypes.CDLL("libGL.so.1")
 gl.glCreateShader.restype = c_uint
 gl.glCreateProgram.restype = c_uint
@@ -26,16 +26,19 @@ void main() {
 """
 
 FRAGMENTOS = b"""#version 330 core
-#define N 48
+#define N 100
+#define NT 30
 out vec4 color;
 uniform vec2 uTam, uPie;
 uniform float uEsc, uCamara;
 uniform int uN, uNT;
 uniform vec4 uA[N], uB[N];
 uniform int uMat[N];
-uniform vec4 uTinte[6];
-uniform int uTinteM[6];
-uniform vec3 uColor[7];
+uniform vec4 uTinte[NT];
+uniform int uTinteM[NT];
+uniform float uFuerza[NT];
+uniform vec3 uColor[10];
+uniform float uMojado;
 uniform vec4 uCaja;
 
 float capsula(vec3 p, vec3 a, vec3 b, float r0, float r1) {
@@ -72,11 +75,14 @@ vec3 tono(vec3 p, out int mat) {
     }
     if (mat >= 4) return uColor[mat];
     vec3 c = suma / max(pesos, 0.001);
-    if (mat == 0) for (int i = 0; i < uNT; i++) {
-        float k = 1.0 - smoothstep(uTinte[i].w - 2.0, uTinte[i].w + 2.0, distance(p, uTinte[i].xyz));
-        c = mix(c, uColor[uTinteM[i]], k);
+    for (int i = 0; i < uNT; i++) {
+        bool barro = uTinteM[i] == 7;
+        if (mat != 0 && !barro) continue;
+        float borde = barro ? 5.0 + 3.0 * sin(p.x * 0.4) * sin(p.y * 0.5 + p.z * 0.3) : 2.0;
+        float k = 1.0 - smoothstep(uTinte[i].w - borde, uTinte[i].w + borde, distance(p, uTinte[i].xyz));
+        c = mix(c, uColor[uTinteM[i]], k * uFuerza[i]);
     }
-    return c;
+    return c * (1.0 - uMojado * 0.2);
 }
 void main() {
     vec2 q = vec2(gl_FragCoord.x, uTam.y - gl_FragCoord.y) - uPie;
@@ -108,7 +114,9 @@ void main() {
     float banda = mix(0.74, 1.0, smoothstep(-0.02, 0.1, dl)) + 0.07 * smoothstep(0.62, 0.74, dl);
     vec3 c = base * banda;
     float frente = max(dot(n, -dir), 0.0);
-    if (mat == 4) {
+    if (mat == 8 || mat == 9) {
+        c = base * mix(0.82, 1.05, smoothstep(-0.3, 0.6, dl));
+    } else if (mat == 4) {
         float brillo = pow(max(dot(n, normalize(luz - dir)), 0.0), 90.0);
         c = base + vec3(0.72) * brillo;
     } else c = mix(vec3(0.17, 0.12, 0.1), c, smoothstep(0.1, 0.3, frente));
@@ -139,9 +147,10 @@ class Dibujo:
         if not ok.value:
             raise RuntimeError("No se pudo enlazar el shader")
         self.u = {n: gl.glGetUniformLocation(self.prog, n.encode()) for n in (
-            "uTam", "uPie", "uEsc", "uCamara", "uN", "uNT", "uA", "uB", "uMat", "uTinte", "uTinteM", "uColor", "uCaja")}
+            "uTam", "uPie", "uEsc", "uCamara", "uN", "uNT", "uA", "uB", "uMat", "uTinte", "uTinteM", "uFuerza", "uColor",
+            "uCaja", "uMojado")}
 
-    def dibujar(self, ancho, alto, pie, esc, camara, capsulas, tintes, colores):
+    def dibujar(self, ancho, alto, pie, esc, camara, capsulas, tintes, colores, mojado=0.0):
         gl.glViewport(0, 0, ancho, alto)
         gl.glClearColor(c_float(0), c_float(0), c_float(0), c_float(0))
         gl.glClear(0x4000)
@@ -157,11 +166,11 @@ class Dibujo:
                 maximo[j] = max(maximo[j], p[j] + r0, q[j] + r1)
         centro = [(x + y) / 2 for x, y in zip(minimo, maximo)]
         radio = sum((y - x) ** 2 for x, y in zip(minimo, maximo)) ** .5 / 2 + 8
-        t, tm = (c_float * 24)(), (c_int * 6)()
-        for i, (p, r, mat) in enumerate(tintes[:MAX_TINTES]):
+        t, tm, tf = (c_float * (4 * MAX_TINTES))(), (c_int * MAX_TINTES)(), (c_float * MAX_TINTES)()
+        for i, (p, r, mat, fuerza) in enumerate(tintes[:MAX_TINTES]):
             t[4 * i:4 * i + 4] = (*p, r)
-            tm[i] = mat
-        col = (c_float * 21)(*[x for c in colores for x in c])
+            tm[i], tf[i] = mat, fuerza
+        col = (c_float * 30)(*[x for c in colores for x in c])
         u = self.u
         gl.glUseProgram(self.prog)
         gl.glUniform2f(u["uTam"], ancho, alto)
@@ -173,9 +182,11 @@ class Dibujo:
         gl.glUniform4fv(u["uA"], n, a)
         gl.glUniform4fv(u["uB"], n, b)
         gl.glUniform1iv(u["uMat"], n, m)
-        gl.glUniform4fv(u["uTinte"], 6, t)
-        gl.glUniform1iv(u["uTinteM"], 6, tm)
-        gl.glUniform3fv(u["uColor"], 7, col)
+        gl.glUniform4fv(u["uTinte"], MAX_TINTES, t)
+        gl.glUniform1iv(u["uTinteM"], MAX_TINTES, tm)
+        gl.glUniform1fv(u["uFuerza"], MAX_TINTES, tf)
+        gl.glUniform3fv(u["uColor"], 10, col)
+        gl.glUniform1f(u["uMojado"], mojado)
         gl.glUniform4f(u["uCaja"], c_float(centro[0]), c_float(centro[1]), c_float(centro[2]), c_float(radio))
         gl.glBindVertexArray(self.vao)
         gl.glDrawArrays(4, 0, 3)

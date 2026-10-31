@@ -11,7 +11,11 @@ import random
 CAMARA = 0.36  # lo que se mira desde arriba
 
 # Materiales (los mismos índices en el shader). Desde OJO son detalles: no se funden con la piel.
-PIEL, CLARO, MANCHA, OREJA, OJO, TINTA, LENGUA = range(7)
+PIEL, CLARO, MANCHA, OREJA, OJO, TINTA, LENGUA, BARRO, ESPUMA, GOTA = range(10)
+# Dónde se ensucia: (largo del lomo, ángulo alrededor) en el cuerpo y (arriba, lado) en la cabeza
+ANCLAS_CUERPO = tuple(((i % 6 + .5) / 6, i * 2.4) for i in range(18))
+ANCLAS_CABEZA = ((-.5, -.6), (-.5, .6), (-.8, 0), (-.1, -.9), (-.1, .9), (.2, 0))
+NUM_ANCLAS = len(ANCLAS_CUERPO) + len(ANCLAS_CABEZA)
 ZANCADA, LEVANTA = 26, 20
 LADOS, FASES = (1, -1, 1, -1), (0, .5, .25, .75)
 POSES = {
@@ -81,6 +85,12 @@ class Can:
         self.cola = [Resorte(120 - i * 18, 8) for i in range(4)]
         self.alto_cab = None
         self.eventos = []  # lo que deja hecho: ("pis" | "caca", x, y) en pantalla
+        self.barro = [0.0] * NUM_ANCLAS    # 0-1, lo pone la partida
+        self.espuma = [0.0] * NUM_ANCLAS
+        self.mojado = 0.0
+        self.apetito = 1.0                 # 0-1: cuanto más bajo, más alicaído
+        self.anclas = []                   # dónde cae cada ancla en la vista (lo usa el baño)
+        self.chorro = None                 # (x, y) de la ducha, en coordenadas del perro
         self.aguanta = 0.0
 
     def pedir(self, accion, segundos=4.0):
@@ -116,6 +126,8 @@ class Can:
             objetivo = math.atan2(dy * 1.7, dx)
         elif accion == "patita":
             objetivo = math.pi / 2 - .3
+        elif accion == "banio":
+            objetivo = self.yaw + (0 if self.chorro else .25)  # se va dando la vuelta
         dif = math.atan2(math.sin(objetivo - self.yaw), math.cos(objetivo - self.yaw))
         self.yaw += dif * min(1, dt * 7)
         if accion in ("pis", "caca") and not anda and w["pis" if accion == "pis" else "sentado"] > .8:
@@ -129,7 +141,7 @@ class Can:
             if self.salto >= 1:
                 self.salto = -1.0
         self.espera -= dt
-        if self.espera <= 0 and not anda:
+        if self.espera <= 0 and not anda and accion != "banio":
             self.decidir()
 
     def decidir(self):
@@ -184,10 +196,12 @@ class Can:
         rodillas = [_ik(raices[i], pies[i], 35 * k, 35 * k, -1 if i < 2 else 1) for i in range(4)]
 
         cuello = _lerp(_lerp(POSES["pie"][2], POSES["sentado"][2], s), POSES["tumbado"][2], l) + sacude * .05
+        alicaido = 1 - self.apetito
+        cuello += alicaido * .35
         n0 = (hombro[0] + 16, hombro[1] - 14, 0.0)
         n1 = (n0[0] + math.sin(cuello) * 46, n0[1] - math.cos(cuello) * 46, 0.0)
         cab = (n1[0] + 8, n1[1] - 8, 0.0)
-        h_yaw, h_pitch = sacude * .55, .2 if l > .7 else 0.0
+        h_yaw, h_pitch = sacude * .55, (.2 if l > .7 else 0.0) + alicaido * .25
         if self.raton:
             vista = _girar(cab, self.yaw)
             mx, my = self.raton[0] - self.x - vista[0], self.raton[1] - self.y - vista[1] - vista[2] * CAMARA
@@ -207,7 +221,7 @@ class Can:
         tiron = (cab[1] - antes) / max(dt, .001) * .5 + (40 if w["andar"] > .3 else 0) + sacude * 90
         for e in self.orejas:
             e.ir(_clamp(-tiron * .009, -.9, .9), dt)
-        meneo = 0 if w["sacude"] > .1 else math.sin(t * (3 if l > .7 else 11)) * (.12 if l > .7 else .5)
+        meneo = 0 if w["sacude"] > .1 else math.sin(t * (3 if l > .7 else 11)) * (.12 if l > .7 else .5) * self.apetito
         for i, m in enumerate(self.cola):
             m.ir(meneo * (1 + i * .3) - sacude * .5, dt)
 
@@ -281,5 +295,31 @@ class Can:
         panza = _girar((medio[0] + 14, medio[1] + r * 1.05, 0), self.yaw)
         pecho = _girar((hombro[0] + r * .9, hombro[1] + 10, 0), self.yaw)
         coronilla = en_cabeza((-R * .15, -R * .8, 0))
-        tintes = [(cruz, r * .92, MANCHA), (panza, r * .78, CLARO), (pecho, r * .6, CLARO), (coronilla, R * .55, MANCHA)]
+        tintes = [(cruz, r * .92, MANCHA, 1), (panza, r * .78, CLARO, 1), (pecho, r * .6, CLARO, 1), (coronilla, R * .55, MANCHA, 1)]
+        self.anclas = []
+        for lar, ang in ANCLAS_CUERPO:
+            base = _mez(cadera, hombro, lar)
+            q = (base[0], base[1] + math.cos(ang) * r * .96, base[2] + math.sin(ang) * r * .96)
+            self.anclas.append(_girar(q, self.yaw))
+        for alto, lado in ANCLAS_CABEZA:
+            d = math.sqrt(max(0, 1 - alto * alto - lado * lado))
+            self.anclas.append(en_cabeza((-d * R * .9, alto * R * .95, lado * R * .95)))
+        for i, q in enumerate(self.anclas):
+            if self.barro[i] > .02:
+                tintes.append((q, 15 + (i * 7 % 9), BARRO, min(self.barro[i] * 1.3, .9)))
+            e = self.espuma[i]
+            if e > .05:
+                lista.append((q, q, 8 + e * 11, 8 + e * 11, ESPUMA))
+                otro = (q[0] + 9 * (1 if i % 2 else -1), q[1] - 6, q[2] + 4)
+                lista.append((otro, otro, 5 + e * 7, 5 + e * 7, ESPUMA))
+        if self.chorro:
+            for i in range(7):
+                f = (t * 2.4 + i / 7) % 1
+                x, y = self.chorro[0] + (i - 3) * 6, self.chorro[1] - 26 + f * 70
+                lista.append(((x, y, 60), (x, y + 8, 60), 1.7, 1.2, GOTA))
+        if self.mojado > .3:
+            for i in range(0, 18, 3):
+                f = (t * .9 + i * .13) % 1
+                q = self.anclas[i]
+                lista.append(((q[0], q[1] + r * .5 + f * 30, q[2]), (q[0], q[1] + r * .5 + f * 30 + 3, q[2]), 2.2, 1.4, GOTA))
         return lista, tintes
