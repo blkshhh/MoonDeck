@@ -32,7 +32,7 @@ def _columnas(datos, tope, n):
     varias. Nunca se salta muestras: con una nueva, el dibujo se desliza entero en vez de cambiar."""
     datos = list(datos)
     repite = -(-n // len(datos))
-    return [min(v / tope, 1.0) for v in datos[-(-n // repite):] for _i in range(repite)][-n:]
+    return [min(v / tope, 1.0) for v in datos[-n // repite:] for _i in range(repite)][-n:]
 
 
 def tramos(largo, frac, celda, hueco):
