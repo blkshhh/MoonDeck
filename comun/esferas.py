@@ -174,6 +174,26 @@ def _vel_anillo(l, pal, w, h, e):
     _cifras(l, pal, cx, cy, r, r_med * 1.2, e, color, 0.34)
 
 
+def anillos_uso(l, pal, w, h, anillos):
+    """Un anillo por cada (porcentaje o None, rótulo), en fila, con la cifra dentro."""
+    alto_rotulo = 18
+    r = min(w / len(anillos) - 12, h - alto_rotulo - 4) / 2
+    grueso = max(5.0, r * 0.17)
+    arriba = -math.pi / 2
+    for i, (pct, rotulo) in enumerate(anillos):
+        cx, cy = w * (i + 0.5) / len(anillos), (h - alto_rotulo) / 2
+        color = pal["rojo"] if (pct or 0) >= 90 else pal["amarillo"] if (pct or 0) >= 70 else pal["azul"]
+        ri = r - grueso / 2
+        l.arco(cx, cy, ri, 0, 2 * math.pi, grueso, con_alfa(pal["tenue"], 0.14), False)
+        if pct:
+            l.arco(cx, cy, ri, arriba, arriba + 2 * math.pi * min(pct, 100) / 100, grueso, color, True)
+        texto = "—" if pct is None else f"{pct:.0f}%"
+        px = px_que_quepa(l, texto, ri * 1.3, ri * 0.7)
+        _, th = l.medir(texto, px, "fino")
+        l.texto(texto, cx - ri, cy - th / 2, 2 * ri, th, px, pal["texto"], "fino")
+        l.texto(rotulo, cx - w / len(anillos) / 2, h - alto_rotulo, w / len(anillos), alto_rotulo, 11, pal["tenue"], "fino")
+
+
 # --- relojes ----------------------------------------------------------------------
 
 ESTILOS_NUEVOS = (("anillos", "Anillos"), ("binario", "Binario"), ("nixie", "Tubos Nixie"),

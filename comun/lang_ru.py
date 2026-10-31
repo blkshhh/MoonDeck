@@ -856,4 +856,11 @@ TEXTOS = {
     '¡SON LAS': 'СЕЙЧАС',
     '¡TIC!': 'ТИК!',
     '¡TAC!': 'ТАК!',
+    'Claude': 'Claude',
+    '5 horas': '5 часов',
+    'Semana': 'Неделя',
+    'Lo que llevas gastado de tu plan de Claude, en 5 horas y en la semana.': 'Сколько вы израсходовали из плана Claude за 5 часов и за неделю.',
+    'Usa Claude Code con el mod para ver datos.': 'Используйте Claude Code с модом, чтобы увидеть данные.',
+    'Vuelve en {tiempo}': 'Сброс через {tiempo}',
+    'Última lectura: {hora}': 'Последнее чтение: {hora}',
 }
