@@ -99,12 +99,28 @@ class Metodos:
         g = m.get_geometry()
         self.ventana_perro = VentanaCan(p.d["diseno"], g.width, g.height, monitor=m,
                                         al_hacer=self.perro_hizo, al_acariciar=p.acariciar)
+        if self.can_perro:  # sigue donde estaba, haciendo lo que hacía
+            self.ventana_perro.can = self.can_perro
+        self.can_perro = self.ventana_perro.can
         self.ventana_perro.show_all()
 
     def guardar_perro(self):
         if self.ventana_perro:
             self.ventana_perro.destroy()
             self.ventana_perro = None
+
+    def subir_perro(self):
+        """En una capa manda lo último abierto: se reabren para quedar sobre las tarjetas."""
+        self.espera_subir = None
+        for v in self.ventanas_mancha:
+            v.destroy()
+        self.ventanas_mancha = []
+        for m in self.partida_perro.d["manchas"]:
+            self.poner_mancha(m)
+        if self.ventana_perro:
+            self.guardar_perro()
+            self.sacar_perro()
+        return False
 
     def alternar_perro(self, _b=None):
         p = self.partida_perro
@@ -154,7 +170,7 @@ class Metodos:
 
 def iniciar(self):
     self.partida_perro = can_partida.Partida(self.config.setdefault("perros", {}), self.guardar_config)
-    self.ventana_perro = None
+    self.ventana_perro = self.can_perro = self.espera_subir = None
     self.ventanas_mancha = []
 
 
@@ -189,6 +205,13 @@ def arrancar(self):
         self.sacar_perro()
     self.pintar_perro()
     GLib.timeout_add(CADA_MS, self.vivir_perro)
+
+
+def ventanas_abiertas(self):
+    # Con margen: las tarjetas sueltas se colocan un momento después de abrirse.
+    if self.espera_subir:
+        GLib.source_remove(self.espera_subir)
+    self.espera_subir = GLib.timeout_add(1200, self.subir_perro)
 
 
 def ajustes(self, cont):
