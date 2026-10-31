@@ -196,17 +196,15 @@ def anillos_uso(l, pal, w, h, anillos):
 
 # --- relojes ----------------------------------------------------------------------
 
-ESTILOS_NUEVOS = (("anillos", "Anillos"), ("binario", "Binario"), ("nixie", "Tubos Nixie"),
-                  ("flip", "Tarjetas (flip)"), ("led", "LED de 7 segmentos"))
+ESTILOS_NUEVOS = (("anillos", "Anillos"), ("flip", "Tarjetas (flip)"), ("led", "LED de 7 segmentos"))
 
 # Alto natural de cada uno (el mínimo es algo más de la mitad).
-ALTOS = {"anillos": 200, "binario": 150, "nixie": 120, "flip": 120, "led": 110}
+ALTOS = {"anillos": 200, "flip": 120, "led": 110}
 
 
 def reloj(l, pal, w, h, ahora, o, fecha, estilo):
     """o: opciones del reloj (h24, segundos); fecha: el texto de la fecha ya traducido."""
-    {"anillos": _anillos, "binario": _binario, "nixie": _nixie, "flip": _flip,
-     "led": _led}[estilo](l, pal, w, h, ahora, o, fecha)
+    {"anillos": _anillos, "flip": _flip, "led": _led}[estilo](l, pal, w, h, ahora, o, fecha)
 
 
 def _hora12(ahora, o):
@@ -264,90 +262,6 @@ def _anillos(l, pal, w, h, ahora, o, fecha):
     _pie(l, pal, w, h, alto_fecha, fecha, ahora, o)
 
 
-def _binario(l, pal, w, h, ahora, o, fecha):
-    """Reloj binario (BCD): una columna por cifra; cada punto encendido suma 8, 4, 2 o 1."""
-    cifras = "".join(_digitos(ahora, o))
-    bits = [2, 4, 3, 4, 3, 4][:len(cifras)]  # cuántos puntos necesita cada columna
-    alto_etiq = 16 if h > 110 else 0
-    alto_fecha = _alto_fecha(o, h, 170, 18)
-    zona = h - alto_etiq - 2 * alto_fecha
-    grupos = len(cifras) // 2
-    sep = 0.6  # hueco extra entre horas, minutos y segundos (en columnas)
-    col = min(w / (len(cifras) + sep * (grupos - 1)), zona / 4)
-    rad = col * 0.32
-    total = col * (len(cifras) + sep * (grupos - 1))
-    x0 = (w - total) / 2
-    y0 = (h - 4 * col - alto_etiq) / 2
-    for i, (c, n) in enumerate(zip(cifras, bits)):
-        x = x0 + col * (i + sep * (i // 2)) + col / 2
-        valor = int(c)
-        for fila in range(4):
-            peso = 8 >> fila
-            if 4 - fila > n:
-                continue  # ese bit no hace falta en esta columna
-            y = y0 + col * fila + col / 2
-            encendido = valor & peso
-            color = pal["azul"] if encendido else con_alfa(pal["tenue"], 0.1)
-            if encendido:
-                l.circulo(x, y, rad * 1.45, con_alfa(pal["azul"], 0.18))
-            l.circulo(x, y, rad, color)
-        if alto_etiq:
-            l.texto(c, x - col / 2, y0 + 4 * col + 2, col, alto_etiq, min(13.0, alto_etiq * 0.8), pal["gris"], "normal")
-    _pie(l, pal, w, h, alto_fecha, fecha, ahora, o)
-
-
-NIXIE_POR_DEFECTO = "#ff8529"  # el naranja del neón de verdad
-# Colores para elegir rápido (clic derecho en el reloj); en Configuración, cualquiera.
-COLORES_NIXIE = (("#ff8529", "Naranja"), ("#5ad1ff", "Azul hielo"), ("#4dff88", "Verde"),
-                 ("#ff4fa3", "Rosa"), ("#b77bff", "Violeta"), ("#ff4040", "Rojo"))
-
-
-def _rgb(hexa):
-    hexa = (hexa or NIXIE_POR_DEFECTO).lstrip("#")
-    try:
-        return tuple(int(hexa[i:i + 2], 16) / 255 for i in (0, 2, 4))
-    except ValueError:
-        return _rgb(NIXIE_POR_DEFECTO)
-
-
-def _nixie(l, pal, w, h, ahora, o, fecha):
-    """Tubos Nixie: cristal oscuro, la cifra "fantasma" y la de verdad brillando (naranja,
-    o el color que se elija en o["nixie"])."""
-    color = _rgb(o.get("nixie"))
-    nucleo = mezcla(color, (1, 1, 1), 0.4)  # el centro de la cifra, casi blanco
-    partes = _digitos(ahora, o)
-    alto_fecha = _alto_fecha(o, h, 150, 18)
-    zona = h - 2 * alto_fecha - 4
-    n = len(partes) * 2
-    puntos = len(partes) - 1
-    ancho_tubo = min((w - 8) / (n + puntos * 0.45 + (n - 1) * 0.12), zona * 0.62)
-    alto_tubo = min(zona, ancho_tubo / 0.62)
-    gap = ancho_tubo * 0.12
-    total = n * ancho_tubo + (n - 1) * gap + puntos * ancho_tubo * 0.45
-    x = (w - total) / 2
-    y = (h - alto_tubo) / 2
-    px = alto_tubo * 0.78
-    for k, parte in enumerate(partes):
-        for c in parte:
-            r = ancho_tubo * 0.42
-            l.rect(x, y, ancho_tubo, alto_tubo, r, (0.10, 0.07, 0.06, 0.75))
-            l.rect(x + 1, y + 1, ancho_tubo - 2, alto_tubo * 0.35, r, (1, 1, 1, 0.05))  # reflejo del cristal
-            l.texto("8", x, y, ancho_tubo, alto_tubo, px, con_alfa(mezcla(color, (1, 1, 1), 0.15), 0.08), "normal")
-            # Brillo: la cifra repetida alrededor con poca opacidad.
-            halo = max(1.0, px * 0.035)
-            for dx, dy in ((halo, 0), (-halo, 0), (0, halo), (0, -halo),
-                           (halo * 0.7, halo * 0.7), (-halo * 0.7, -halo * 0.7)):
-                l.texto(c, x + dx, y + dy, ancho_tubo, alto_tubo, px, con_alfa(color, 0.18), "normal")
-            l.texto(c, x, y, ancho_tubo, alto_tubo, px, nucleo, "normal")
-            x += ancho_tubo + gap
-        if k < len(partes) - 1:
-            sep = ancho_tubo * 0.45
-            for f in (0.36, 0.64):
-                l.circulo(x - gap / 2 + sep / 2, y + alto_tubo * f, max(1.5, ancho_tubo * 0.06), color)
-            x += sep
-    _pie(l, pal, w, h, alto_fecha, fecha, ahora, o)
-
-
 def _flip(l, pal, w, h, ahora, o, fecha):
     """Reloj de tarjetas abatibles: una tarjeta por par de cifras, partida por la mitad."""
     partes = _digitos(ahora, o)[:2]
@@ -362,13 +276,15 @@ def _flip(l, pal, w, h, ahora, o, fecha):
     x = (w - total) / 2
     y = (h - alto) / 2
     fondo = mezcla(pal["tenue"], (0, 0, 0), 0.82)
+    # La tarjeta siempre es oscura: en un tema de letra oscura, las cifras van claras.
+    cifras = pal["texto"] if sum(pal["texto"][:3]) / 3 > 0.5 else (0.95, 0.95, 0.95)
     for texto, ancho_t, alto_t in [(p, ancho, alto) for p in partes] + ([(seg, ancho * extra, alto * 0.5)] if seg else []):
         yt = y + (alto - alto_t)
         r = max(4.0, ancho_t * 0.07)
         l.rect(x, yt, ancho_t, alto_t, r, (*fondo, 0.92))
         l.rect(x, yt, ancho_t, alto_t / 2, r, (1, 1, 1, 0.045))  # mitad de arriba algo más clara
         px = px_que_quepa(l, texto, ancho_t * 0.86, alto_t * 0.72, "negrita")
-        l.texto(texto, x, yt, ancho_t, alto_t, px, pal["texto"], "negrita")
+        l.texto(texto, x, yt, ancho_t, alto_t, px, cifras, "negrita")
         # La raja del medio y las bisagras.
         l.rect(x, yt + alto_t / 2 - max(1.0, alto_t * 0.012), ancho_t, max(2.0, alto_t * 0.024), 0, (0, 0, 0, 0.55))
         for bx in (x + ancho_t * 0.04, x + ancho_t * 0.96 - max(2.0, ancho_t * 0.025)):

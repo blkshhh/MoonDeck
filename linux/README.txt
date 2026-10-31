@@ -122,8 +122,8 @@ SENSORS
 CLOCK, CALENDAR, AUDIO AND SPEED
 --------------------------------
   Clock ............ adapts to the size of the widget or the cell.
-                     Right-click it: "Clock type" (Digital, Analog,
-                     Minimalist, World clock, Rings, Binary, Nixie tubes, Flip
+                     In Settings > Widget options: "Clock type" (Digital, Analog,
+                     Minimalist, World clock, Rings, Flip
                      cards or 7-segment LED), "24-hour format",
                      "Show seconds" and "Cities" (up to 8).
   Calendar ......... the month with today highlighted; arrows to change the
