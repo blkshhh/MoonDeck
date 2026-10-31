@@ -3223,7 +3223,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("apps")
             self.config["apps_visto"] = True
-        for clave in ("immich", "docker", "claude"):
+        for clave in ("immich", "docker", "claude", "perros"):
             if not self.config.get(f"{clave}_visto"):  # widgets nuevos: llegan ocultos
                 self.config.setdefault("ocultos", []).append(clave)
                 self.config[f"{clave}_visto"] = True

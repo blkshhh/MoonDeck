@@ -72,6 +72,8 @@ CATALOGO = tuple(p for p in (
      ("Móvil",), ("movil.py",)) if sys.platform != "win32" else None,
     ("claude", "Claude", "Lo que llevas gastado de tu plan de Claude, en 5 horas y en la semana.",
      ("Claude",), ("uso_claude.py",)) if sys.platform != "win32" else None,
+    ("perros", "Perros", "Un perro en 3D que vive en tu escritorio y necesita tus cuidados (usa la GPU).",
+     ("Perro",), ("can_esqueleto.py", "can_partida.py", "can_gl.py", "can_ventana.py")) if sys.platform != "win32" else None,
     ("fondos", "Fondos", "Fotos de Unsplash detrás de las tarjetas del modo panel, con tu clave gratuita.",
      (), ("fondos.py",)),
     ("immich", "Immich", "Tu servidor de fotos Immich: espacio, biblioteca, tareas y la IA.",

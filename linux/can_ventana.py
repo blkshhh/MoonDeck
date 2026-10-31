@@ -30,13 +30,16 @@ def rgb(h):
 
 
 class VentanaCan(Gtk.Window):
-    def __init__(self, diseno, ancho, alto, segundos):
+    def __init__(self, diseno, ancho, alto, segundos=0, monitor=None, al_hacer=None, al_acariciar=None):
         super().__init__()
+        self.al_hacer, self.al_acariciar = al_hacer, al_acariciar
         self.set_visual(self.get_screen().get_rgba_visual())
         self.set_app_paintable(True)
         self.set_default_size(LADO, LADO)
         GtkLayerShell.init_for_window(self)
         GtkLayerShell.set_namespace(self, "moondeck-mascota")
+        if monitor:
+            GtkLayerShell.set_monitor(self, monitor)
         GtkLayerShell.set_layer(self, GtkLayerShell.Layer.BOTTOM)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.LEFT, True)
         GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
@@ -44,7 +47,7 @@ class VentanaCan(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
         self.can = ce.Can(ancho, alto, diseno)
         self.dibujo = Dibujo()
-        self.colores = [*(rgb(c) for c in ce.DISENOS[diseno]["colores"]), OJO, TINTA, LENGUA]
+        self.poner_diseno(diseno)
         self.area = Gtk.GLArea()
         self.area.set_required_version(3, 3)
         self.area.set_has_alpha(True)
@@ -52,7 +55,8 @@ class VentanaCan(Gtk.Window):
         self.area.set_size_request(LADO, LADO)
         self.area.connect("realize", self.preparar)
         self.area.connect("render", self.pintar)
-        self.area.add_events(4 | 256)  # movimiento y pulsación
+        self.area.add_events(Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.BUTTON_PRESS_MASK
+                             | Gdk.EventMask.BUTTON_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         self.area.connect("button-press-event", lambda *_: self.can.saltar())
         self.area.connect("motion-notify-event", self.raton)
         self.area.connect("leave-notify-event", lambda *_: setattr(self.can, "raton", None))
@@ -61,6 +65,10 @@ class VentanaCan(Gtk.Window):
         self.fin = self.inicio + segundos if segundos else None
         self.tiempos = []
         self.area.add_tick_callback(self.tic)
+
+    def poner_diseno(self, diseno):
+        self.can.diseno = diseno
+        self.colores = [*(rgb(c) for c in ce.DISENOS[diseno]["colores"]), OJO, TINTA, LENGUA]
 
     def preparar(self, area):
         area.make_current()
@@ -72,6 +80,8 @@ class VentanaCan(Gtk.Window):
 
     def raton(self, _w, e):
         self.can.raton = (self.can.x + (e.x - LADO / 2) / ESC, self.can.y + (e.y - PIE_Y) / ESC)
+        if e.state & Gdk.ModifierType.BUTTON1_MASK and self.al_acariciar:
+            self.al_acariciar()
 
     def tic(self, _w, _reloj):
         ahora = time.monotonic()
@@ -79,6 +89,10 @@ class VentanaCan(Gtk.Window):
         self.tiempos.append(ahora - self.antes)
         self.antes = ahora
         self.can.avanzar(dt)
+        while self.can.eventos:
+            tipo, x, y = self.can.eventos.pop()
+            if self.al_hacer:
+                self.al_hacer(tipo, x, y)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, round(self.can.x - LADO / 2))
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, round(self.can.y - PIE_Y))
         self.area.queue_render()

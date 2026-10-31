@@ -80,6 +80,17 @@ class Can:
         self.orejas = [Resorte(130, 9), Resorte(130, 9)]
         self.cola = [Resorte(120 - i * 18, 8) for i in range(4)]
         self.alto_cab = None
+        self.eventos = []  # lo que deja hecho: ("pis" | "caca", x, y) en pantalla
+        self.aguanta = 0.0
+
+    def pedir(self, accion, segundos=4.0):
+        """Deja lo que hacía y hace esto."""
+        self.accion, self.espera, self.aguanta = accion, segundos, 0.0
+        self.destino = (self.x, self.y)
+
+    def ir(self, x, y):
+        self.accion, self.espera = "pie", 3.0
+        self.destino = (_clamp(x, 120, self.ancho - 120), _clamp(y, 160, self.alto - 60))
 
     def saltar(self):
         if self.salto < 0:
@@ -91,7 +102,7 @@ class Can:
         dist = math.hypot(dx, dy)
         anda = dist > 6
         accion = self.accion
-        objetivos = dict(sentado=accion in ("sentado", "patita"), tumbado=accion == "tumbado", sacude=accion == "sacude",
+        objetivos = dict(sentado=accion in ("sentado", "patita", "caca"), tumbado=accion == "tumbado", sacude=accion == "sacude",
                          pis=accion == "pis", patita=accion == "patita")
         for clave, si in objetivos.items():
             w[clave] += ((1 if si and not anda else 0) - w[clave]) * min(1, dt * 6)
@@ -107,6 +118,12 @@ class Can:
             objetivo = math.pi / 2 - .3
         dif = math.atan2(math.sin(objetivo - self.yaw), math.cos(objetivo - self.yaw))
         self.yaw += dif * min(1, dt * 7)
+        if accion in ("pis", "caca") and not anda and w["pis" if accion == "pis" else "sentado"] > .8:
+            self.aguanta += dt
+            if self.aguanta > 1.2:
+                atras = 34 if accion == "pis" else 58
+                self.eventos.append((accion, self.x - math.cos(self.yaw) * atras, self.y - math.sin(self.yaw) * atras * CAMARA))
+                self.pedir("pie", 1.0)
         if self.salto >= 0:
             self.salto += dt / .7
             if self.salto >= 1:
