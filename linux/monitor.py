@@ -2188,6 +2188,29 @@ class BarraEdicion(Gtk.Box):
         self.filas.set_text(str(g["filas"]) if g["filas"] else _("auto ({n})").format(n=self.panel.filas))
 
 
+class FondoPanel(VentanaCristal):
+    """El fondo del modo panel, en su propia capa: llega a los bordes de la pantalla, por debajo
+    de la barra y el dock de COSMIC. Las tarjetas siguen en VentanaPanel, que respeta el área
+    libre, así que no se meten debajo de la barra. No recibe clics."""
+
+    def __init__(self, panel, capa, monitor):
+        E = GtkLayerShell.Edge
+        super().__init__("MoonDeck", capa, monitor, (E.TOP, E.BOTTOM, E.LEFT, E.RIGHT), teclado=False)
+        self.panel = panel
+        self.app = panel.app
+        GtkLayerShell.set_exclusive_zone(self, -1)  # -1: ignora lo que reservan los demás
+        self.connect("realize", lambda w: w.get_window().input_shape_combine_region(cairo.Region(), 0, 0))
+        self.connect("draw", self.dibujar)
+
+    def rects_blur(self):
+        a = self.get_allocation()
+        return [(0, 0, a.width, a.height)] if self.app.tema["panel"]["cristal"] else []
+
+    def dibujar(self, _w, cr):
+        self.panel.pintar_imagen_o_fondo(cr, self.get_allocated_width(), self.get_allocated_height())
+        return False
+
+
 class VentanaPanel(VentanaCristal):
     """Modo panel: una ventana de cristal a pantalla completa con las tarjetas en cuadrícula.
 
@@ -2205,10 +2228,15 @@ class VentanaPanel(VentanaCristal):
 
     def __init__(self, app, monitor):
         E = GtkLayerShell.Edge if CAPAS else None
-        super().__init__("MoonDeck", "encima" if os.environ.get("MOONDECK_ENCIMA") else "fondo", monitor,
-                         (E.TOP, E.BOTTOM, E.LEFT, E.RIGHT) if CAPAS else ())
+        capa = "encima" if os.environ.get("MOONDECK_ENCIMA") else "fondo"
+        super().__init__("MoonDeck", capa, monitor, (E.TOP, E.BOTTOM, E.LEFT, E.RIGHT) if CAPAS else ())
         self.app = app
         self.monitor = monitor
+        # Se abre antes que el panel para quedar debajo en la misma capa.
+        self.fondo = FondoPanel(self, capa, monitor) if CAPAS else None
+        if self.fondo:
+            self.fondo.show()
+            self.connect("destroy", lambda *_: self.fondo.destroy())
         self.tarjetas = []
         self.celdas = {}      # clave -> (fila, col, alto, ancho)
         self.cols = 1
@@ -2245,8 +2273,31 @@ class VentanaPanel(VentanaCristal):
         packs.llamar(app.packs, "panel", app, self)
 
     def rects_blur(self):
+        if self.fondo:
+            return []  # el desenfoque va en la capa del fondo
         a = self.get_allocation()
         return [(0, 0, a.width, a.height)] if self.app.tema["panel"]["cristal"] else []
+
+    def tam_fondo(self):
+        """Tamaño de lo que hay que cubrir con la foto: toda la pantalla si el fondo va aparte."""
+        if self.fondo and self.fondo.get_allocated_width() >= 200:
+            return self.fondo.get_allocated_width(), self.fondo.get_allocated_height()
+        return self.tam
+
+    def pintar_imagen_o_fondo(self, cr, w, h):
+        if self.imagen:
+            Gdk.cairo_set_source_pixbuf(cr, self.imagen, 0, 0)
+            cr.paint()
+        else:
+            pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
+
+    def repintar_fondo(self):
+        if self.fondo:
+            self.fondo._rects = None
+            self.fondo.actualizar_blur()
+            self.fondo.queue_draw()
+        else:
+            self.lienzo.queue_draw()
 
     # --- modelo de la cuadrícula ----------------------------------------------
 
@@ -2489,12 +2540,8 @@ class VentanaPanel(VentanaCristal):
         return True
 
     def dibujar(self, _w, cr):
-        w, h = self.lienzo.get_allocated_width(), self.lienzo.get_allocated_height()
-        if self.imagen:
-            Gdk.cairo_set_source_pixbuf(cr, self.imagen, 0, 0)
-            cr.paint()
-        else:
-            pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
+        if not self.fondo:
+            self.pintar_imagen_o_fondo(cr, self.lienzo.get_allocated_width(), self.lienzo.get_allocated_height())
         if self.editando:
             cr.set_line_width(1)
             cr.set_dash([4, 4])
@@ -3896,6 +3943,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def alternar(self):
         ventanas = self.ventanas()
         visible = any(v.get_visible() for v in ventanas)
+        if self.panel and self.panel.fondo:
+            ventanas.insert(0, self.panel.fondo)  # primero, para que quede debajo al volver
         for v in ventanas:
             v.set_visible(not visible)
 
@@ -4121,6 +4170,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             v._rects = None
             v.actualizar_blur()
             v.queue_draw()
+        if getattr(self, "panel", None):
+            self.panel.repintar_fondo()
         if guardar:
             self.ajustar_alturas()
             # Al arrastrar un deslizador llegan muchos cambios: se guarda al parar.
