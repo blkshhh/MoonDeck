@@ -2045,6 +2045,10 @@ class VentanaPanel(QWidget):
         self.aplicar_cristal()
         self.barra = BarraEdicion(self)
         self.barra.hide()
+        self.imagen = None       # foto de fondo, del tamaño del panel (la pone un pack)
+        self.franja = None       # controles de abajo (los pone un pack)
+        self.reserva_abajo = 0   # lo que esos controles le quitan a la cuadrícula
+        packs.llamar(app.packs, "panel", app, self)
 
     def aplicar_cristal(self):
         p = self.app.tema["panel"]
@@ -2186,7 +2190,7 @@ class VentanaPanel(QWidget):
     def area(self):
         arriba = self.MARGEN_EDICION if self.editando else self.MARGEN
         return QRectF(self.MARGEN, arriba, self.width() - 2 * self.MARGEN,
-                      self.height() - arriba - self.MARGEN)
+                      self.height() - arriba - self.MARGEN - self.reserva_abajo)
 
     def tam_celda(self):
         a = self.area()
@@ -2210,6 +2214,8 @@ class VentanaPanel(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.colocar_tarjetas()
+        if self.franja:
+            self.franja.setGeometry(0, self.height() - self.franja.ALTO, self.width(), self.franja.ALTO)
 
     # --- edición -------------------------------------------------------------
 
@@ -2304,8 +2310,10 @@ class VentanaPanel(QWidget):
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # El fondo del tema (color, opacidad) encima del cristal.
-        pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
+        if self.imagen:
+            p.drawPixmap(0, 0, self.imagen)
+        else:  # El fondo del tema (color, opacidad) encima del cristal.
+            pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
         if self.editando:
             # Celdas de la cuadrícula (se ven en los huecos y al mover un widget).
             p.setPen(QPen(tenue(45), 1, Qt.DashLine))
@@ -2973,30 +2981,23 @@ class VentanaConfig(QWidget):
         lista = self.grupo(caja, "Reloj")
         o = app.config["reloj"]
         tipo = QComboBox()
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            tipo.addItem(_(nombre), clave)
+        for titulo, lista_relojes in zip(("Recomendados", "Otros"), artes.relojes_de(ARTE, ESTILOS_RELOJ)):
+            tipo.addItem(_(titulo))  # encabezado: no se puede elegir
+            tipo.model().item(tipo.count() - 1).setEnabled(False)
+            for clave, nombre in lista_relojes:
+                tipo.addItem(f"  {_(nombre)}", clave)
         tipo.setCurrentIndex(max(0, tipo.findData(o["estilo"])))
         tipo.currentIndexChanged.connect(lambda i: app.cambiar_reloj(estilo=tipo.itemData(i)))
-        self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
+        self.fila(lista, "Tipo de reloj", tipo)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             ch = QCheckBox()
             ch.setChecked(bool(o[clave]))
             ch.toggled.connect(lambda v, c=clave: app.cambiar_reloj(**{c: v}))
             self.fila(lista, texto, ch)
-        nixie = QPushButton()
-        nixie.setFixedSize(44, 28)
-        nixie.setCursor(Qt.PointingHandCursor)
-
-        def pintar_nixie():
-            nixie.setStyleSheet(f"background: {o.get('nixie', esferas.NIXIE_POR_DEFECTO)}; "
-                                "border: 1px solid #555; border-radius: 6px;")
-
-        def elegir_nixie():
-            app.elegir_color_nixie(self)
-            pintar_nixie()
-        pintar_nixie()
-        nixie.clicked.connect(elegir_nixie)
-        self.fila(lista, "Color de los tubos Nixie", nixie)
+        ciudades = QPushButton(_("Elegir…"))
+        ciudades.setMenu(QMenu(ciudades))
+        app.menu_ciudades(ciudades.menu())
+        self.fila(lista, "Ciudades (reloj mundial, hasta 8)", ciudades)
 
         if ES_WINDOWS:
             self.ajustes_teclado(caja)
@@ -3083,9 +3084,11 @@ class VentanaConfig(QWidget):
 
     def pagina_panel(self, caja):
         s = "panel"
-        lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
-        self.fila(lista, "Color", self.color(s, "panel_fondo"))
-        self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        if not any(packs.llamar(self.app.packs, "fondo_propio", self.app)):
+            lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
+            self.fila(lista, "Color", self.color(s, "panel_fondo"))
+            self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        packs.llamar(self.app.packs, "ajustes_panel", self, caja)
         self.pagina_tarjetas(caja, s)
 
     def pagina_disposicion(self, caja):
@@ -3518,6 +3521,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         # Reloj (tipo y opciones en el clic derecho)
         c = self.tarjeta("reloj", "Reloj")
         opciones = dict(RELOJ_POR_DEFECTO, **self.config.get("reloj", {}))
+        opciones["estilo"] = artes.reloj_valido(opciones["estilo"], ESTILOS_RELOJ)
         self.config["reloj"] = opciones
         self.reloj = RelojVista(opciones)
         c.add(self.reloj)
@@ -3888,20 +3892,20 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a.setChecked(sc is elegida)
 
     def opciones_tarjeta(self, tarjeta, menu):
-        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
-        es lo que sale al pulsar su título."""
+        """Lo que es solo de ese widget (juego, ciudades del reloj...): va en su clic derecho y en
+        el clic en su título. Lo que tiene sitio en Configuración sale solo en el título."""
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
-        if tarjeta.clave == "calendario":
-            sub = menu.addMenu(_("La semana empieza en"))
-            for dia in (0, 6):
-                a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
-                a.setCheckable(True)
-                a.setChecked(self.primer_dia() == dia)
-            menu.addSeparator()
+        if self.menu_de_titulo:
+            if tarjeta.clave == "calendario":
+                sub = menu.addMenu(_("La semana empieza en"))
+                for dia in (0, 6):
+                    a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
+                    a.setCheckable(True)
+                    a.setChecked(self.primer_dia() == dia)
+                menu.addSeparator()
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
 
@@ -3917,10 +3921,14 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             menu.exec(punto)
 
 
+    menu_de_titulo = False  # True mientras se monta el menú del título (no el del clic derecho)
+
     def menu_titulo(self, tarjeta):
         """El menú del título: solo las opciones de ese widget, o None si no tiene."""
         menu = QMenu()
+        self.menu_de_titulo = True
         self.opciones_tarjeta(tarjeta, menu)
+        self.menu_de_titulo = False
         while menu.actions() and menu.actions()[-1].isSeparator():
             menu.removeAction(menu.actions()[-1])
         return menu if menu.actions() else None
@@ -3961,12 +3969,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             else:
                 menu.addAction(_("Sacar del panel (ventana aparte, siempre encima)"),
                                lambda: self.sacar_del_panel(tarjeta))
-        a = menu.addAction(_("Mostrar título"), lambda: self.alternar_titulo(tarjeta))
-        a.setCheckable(True)
-        a.setChecked(tarjeta.clave not in self.config.get("sin_titulo", []))
-        a = menu.addAction(_("Mostrar fondo y borde"), lambda: self.alternar_fondo(tarjeta))
-        a.setCheckable(True)
-        a.setChecked(not tarjeta.sin_fondo())
         menu.addAction(_("Ocultar este widget"), lambda: self.alternar_widget(tarjeta))
         menu.addSeparator()
         self.acciones_comunes(menu, tarjeta.window())
@@ -4114,35 +4116,27 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def menu_reloj(self, menu):
         o = self.config["reloj"]
-        tipos = menu.addMenu(_("Tipo de reloj"))
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
-            a.setCheckable(True)
-            a.setChecked(o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
-            a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
-            a.setCheckable(True)
-            a.setChecked(o[clave])
-        ciudades = menu.addMenu(_("Ciudades (reloj mundial, hasta 8)"))
-        for nombre, zona in CIUDADES:
-            a = ciudades.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
-            a.setCheckable(True)
-            a.setChecked(zona in o["zonas"])
-        if o["estilo"] == "nixie":
-            actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
-            sub = menu.addMenu(_("Color de los tubos"))
-            for color, nombre in esferas.COLORES_NIXIE:
-                a = sub.addAction(_(nombre), lambda _x=False, c=color: self.cambiar_reloj(nixie=c))
+        if self.menu_de_titulo:
+            tipos = menu.addMenu(_("Tipo de reloj"))
+            for titulo, lista in zip(("Recomendados", "Otros"), artes.relojes_de(ARTE, ESTILOS_RELOJ)):
+                tipos.addAction(_(titulo)).setEnabled(False)
+                for clave, nombre in lista:
+                    a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
+                    a.setCheckable(True)
+                    a.setChecked(o["estilo"] == clave)
+            for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
+                a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
                 a.setCheckable(True)
-                a.setChecked(actual == color)
-            sub.addAction(_("Otro color…"), lambda: self.elegir_color_nixie())
-        menu.addSeparator()
+                a.setChecked(o[clave])
+        if self.menu_de_titulo:
+            menu.addSeparator()
 
-    def elegir_color_nixie(self, padre=None):
-        c = QColorDialog.getColor(QColor(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), padre,
-                                  _("Color de los tubos"))
-        if c.isValid():
-            self.cambiar_reloj(nixie=c.name())
+    def menu_ciudades(self, menu):
+        zonas = self.config["reloj"]["zonas"]
+        for nombre, zona in CIUDADES:
+            a = menu.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
+            a.setCheckable(True)
+            a.setChecked(zona in zonas)
 
     def mover_calendario(self, meses):
         if meses:

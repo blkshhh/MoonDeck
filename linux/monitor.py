@@ -1196,7 +1196,7 @@ class RelojVista(Dibujo):
     """Reloj dibujado que se escala al tamaño que tenga (celda del panel o widget).
 
     Estilos: digital, analógico, minimalista y mundial (varias ciudades), y los de
-    esferas.py (anillos, binario, Nixie, flip y LED).
+    esferas.py (anillos, flip y LED).
     """
 
     def __init__(self, opciones):
@@ -2190,7 +2190,10 @@ class VentanaPanel(VentanaCristal):
         self.tam = (g.width, g.height - 40) if g else (1920, 1040)  # hasta que COSMIC diga el real
         if not CAPAS and monitor:
             self.set_default_size(g.width, g.height)
-        superposicion = Gtk.Overlay()
+        self.imagen = None       # foto de fondo, del tamaño del panel (la pone un pack)
+        self.franja = None       # controles de abajo (los pone un pack)
+        self.reserva_abajo = 0   # lo que esos controles le quitan a la cuadrícula
+        superposicion = self.superposicion = Gtk.Overlay()
         self.lienzo = Lienzo(self)
         self.lienzo.connect("draw", self.dibujar)
         superposicion.add(self.lienzo)
@@ -2209,6 +2212,7 @@ class VentanaPanel(VentanaCristal):
         superposicion.show_all()
         if not CAPAS and monitor:
             self.fullscreen_on_monitor(self.get_screen(), app.indice_monitor(monitor))
+        packs.llamar(app.packs, "panel", app, self)
 
     def rects_blur(self):
         a = self.get_allocation()
@@ -2338,7 +2342,7 @@ class VentanaPanel(VentanaCristal):
 
     def area(self):
         arriba = self.MARGEN_EDICION if self.editando else self.MARGEN
-        return self.MARGEN, arriba, self.tam[0] - 2 * self.MARGEN, self.tam[1] - arriba - self.MARGEN
+        return self.MARGEN, arriba, self.tam[0] - 2 * self.MARGEN, self.tam[1] - arriba - self.MARGEN - self.reserva_abajo
 
     def tam_celda(self):
         _, _, aw, ah = self.area()
@@ -2456,7 +2460,11 @@ class VentanaPanel(VentanaCristal):
 
     def dibujar(self, _w, cr):
         w, h = self.lienzo.get_allocated_width(), self.lienzo.get_allocated_height()
-        pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
+        if self.imagen:
+            Gdk.cairo_set_source_pixbuf(cr, self.imagen, 0, 0)
+            cr.paint()
+        else:
+            pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
         if self.editando:
             cr.set_line_width(1)
             cr.set_dash([4, 4])
@@ -2810,19 +2818,25 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Reloj")
         o = app.config["reloj"]
         tipo = Gtk.ComboBoxText()
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            tipo.append(clave, _(nombre))
+        recomendados, otros = artes.relojes_de(ARTE, ESTILOS_RELOJ)
+        for titulo, lista_relojes in (("Recomendados", recomendados), ("Otros", otros)):
+            tipo.append(f"#{titulo}", _(titulo))  # encabezado: no se puede elegir
+            for clave, nombre in lista_relojes:
+                tipo.append(clave, f"  {_(nombre)}")
+        celda = tipo.get_cells()[0]
+        tipo.set_cell_data_func(celda, lambda _c, r, m, i: r.set_property(
+            "sensitive", not m[i][1].startswith("#")))
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
-        self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
+        self.fila(lista, "Tipo de reloj", tipo)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             sw = Gtk.Switch(active=bool(o[clave]))
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
-        nixie = Gtk.ColorButton(rgba=Gdk.RGBA(*hex_rgb(o.get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
-        nixie.connect("color-set", lambda b: app.cambiar_reloj(nixie=temas.a_hex(
-            (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
-        self.fila(lista, "Color de los tubos Nixie", nixie)
+        ciudades = Gtk.MenuButton(label=_("Elegir…"), popup=Gtk.Menu())
+        app.menu_ciudades(ciudades.get_popup())
+        ciudades.get_popup().show_all()
+        self.fila(lista, "Ciudades (reloj mundial, hasta 8)", ciudades)
 
         packs.llamar(app.packs, "ajustes", self, cont)
 
@@ -2867,9 +2881,11 @@ class VentanaConfig(Gtk.Window):
 
     def pagina_panel(self, cont):
         s = "panel"
-        lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
-        self.fila(lista, "Color", self.color(s, "panel_fondo"))
-        self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        if not any(packs.llamar(self.app.packs, "fondo_propio", self.app)):
+            lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
+            self.fila(lista, "Color", self.color(s, "panel_fondo"))
+            self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        packs.llamar(self.app.packs, "ajustes_panel", self, cont)
         self.pagina_tarjetas(cont, s)
 
     def numero(self, clave, minimo, maximo, paso, digitos, fn):
@@ -3130,7 +3146,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("apps")
             self.config["apps_visto"] = True
-        for clave in ("immich", "docker"):
+        for clave in ("immich", "docker", "claude"):
             if not self.config.get(f"{clave}_visto"):  # widgets nuevos: llegan ocultos
                 self.config.setdefault("ocultos", []).append(clave)
                 self.config[f"{clave}_visto"] = True
@@ -3280,6 +3296,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         # Reloj (tipo y opciones en el clic derecho)
         c = self.tarjeta("reloj", "Reloj")
         opciones = dict(RELOJ_POR_DEFECTO, **self.config.get("reloj", {}))
+        opciones["estilo"] = artes.reloj_valido(opciones["estilo"], ESTILOS_RELOJ)
         self.config["reloj"] = opciones
         self.reloj = c.add_w(RelojVista(opciones), expand=True)
 
@@ -3759,9 +3776,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             else:
                 self.item(menu, "Sacar del panel (ventana aparte, siempre encima)",
                           lambda: self.sacar_del_panel(tarjeta))
-        self.item(menu, "Mostrar título", lambda: self.alternar_titulo(tarjeta),
-                  tarjeta.clave not in self.config.get("sin_titulo", []))
-        self.item(menu, "Mostrar fondo y borde", lambda: self.alternar_fondo(tarjeta), not tarjeta.sin_fondo())
         self.item(menu, "Ocultar este widget", lambda: self.alternar_widget(tarjeta))
         menu.append(Gtk.SeparatorMenuItem())
         self.acciones_comunes(menu)
@@ -3770,18 +3784,18 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         return menu
 
     def opciones_tarjeta(self, tarjeta, menu):
-        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
-        es lo que sale al pulsar su título."""
+        """Lo que es solo de ese widget (juego, ciudades del reloj...): va en su clic derecho y en
+        el clic en su título. Lo que tiene sitio en Configuración sale solo en el título."""
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
-        if tarjeta.clave == "calendario":
-            sub = self.submenu(menu, "La semana empieza en")
-            for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
-                self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
-            menu.append(Gtk.SeparatorMenuItem())
+        if self.menu_de_titulo:
+            if tarjeta.clave == "calendario":
+                sub = self.submenu(menu, "La semana empieza en")
+                for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
+                    self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
+                menu.append(Gtk.SeparatorMenuItem())
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
             self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
             menu.append(Gtk.SeparatorMenuItem())
 
@@ -3798,10 +3812,14 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             self._menu_tarjeta = menu  # que no lo borre el recolector mientras se muestra
             menu.popup_at_widget(tarjeta.lb_titulo, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, ev)
 
+    menu_de_titulo = False  # True mientras se monta el menú del título (no el del clic derecho)
+
     def menu_titulo(self, tarjeta):
         """El menú del título: solo las opciones de ese widget, o None si no tiene."""
         menu = Gtk.Menu()
+        self.menu_de_titulo = True
         self.opciones_tarjeta(tarjeta, menu)
+        self.menu_de_titulo = False
         while menu.get_children() and isinstance(menu.get_children()[-1], Gtk.SeparatorMenuItem):
             menu.remove(menu.get_children()[-1])
         return menu if menu.get_children() else None
@@ -3966,30 +3984,21 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def menu_reloj(self, menu):
         o = self.config["reloj"]
-        tipos = self.submenu(menu, "Tipo de reloj")
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
-            self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
-        ciudades = self.submenu(menu, "Ciudades (reloj mundial, hasta 8)")
-        for nombre, zona in CIUDADES:
-            self.item(ciudades, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in o["zonas"])
-        if o["estilo"] == "nixie":
-            actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
-            sub = self.submenu(menu, "Color de los tubos")
-            for color, nombre in esferas.COLORES_NIXIE:
-                self.item(sub, nombre, lambda c=color: self.cambiar_reloj(nixie=c), actual == color)
-            self.item(sub, "Otro color…", self.elegir_color_nixie)
-        menu.append(Gtk.SeparatorMenuItem())
+        if self.menu_de_titulo:
+            tipos = self.submenu(menu, "Tipo de reloj")
+            for titulo, lista in zip(("Recomendados", "Otros"), artes.relojes_de(ARTE, ESTILOS_RELOJ)):
+                self.item(tipos, titulo).set_sensitive(False)
+                for clave, nombre in lista:
+                    self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
+            for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
+                self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
+        if self.menu_de_titulo:
+            menu.append(Gtk.SeparatorMenuItem())
 
-    def elegir_color_nixie(self):
-        d = Gtk.ColorChooserDialog(title=_("Color de los tubos"))
-        d.set_use_alpha(False)
-        d.set_rgba(Gdk.RGBA(*hex_rgb(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
-        if d.run() == Gtk.ResponseType.OK:
-            c = d.get_rgba()
-            self.cambiar_reloj(nixie=temas.a_hex((c.red, c.green, c.blue)))
-        d.destroy()
+    def menu_ciudades(self, menu):
+        zonas = self.config["reloj"]["zonas"]
+        for nombre, zona in CIUDADES:
+            self.item(menu, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in zonas)
 
     def mover_calendario(self, meses):
         if meses:
