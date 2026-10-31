@@ -97,6 +97,7 @@ try:
     from sensores import ES_WINDOWS, Sampler
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import fuentes
     import tema as temas
     import idioma
     from idioma import _
@@ -179,7 +180,30 @@ def aplicar_colores(t):
     C_TITULO = temas.a_hex(temas.mezcla(texto, sec, 0.7))
     TENUE = tuple(round(c * 255) for c in texto)
     SOMBRA = 55 if temas.luminancia(texto) > 0.5 else 18
-    ESCALA = max(0.6, min(1.8, float(g["escala"])))
+    ESCALA = max(0.6, min(1.8, float(g["escala"]))) * ARTE.escala_letra
+
+
+def cargar_fuentes():
+    """Las fuentes de los artes, solo para esta app (no se instalan en el sistema)."""
+    try:
+        for ruta in fuentes.extraer(CARPETA):
+            QFontDatabase.addApplicationFont(ruta)
+    except Exception as e:  # noqa: BLE001 - sin ellas, los artes usan la letra del sistema
+        log("Sin las fuentes de los artes:", e)
+
+
+def pixelado(p, w, h, factor, pintar):
+    """Dibuja en pequeño y amplía sin suavizar: `pintar(painter)` se ve a píxeles de `factor`."""
+    ancho, alto = math.ceil(w / factor), math.ceil(h / factor)
+    img = QImage(ancho, alto, QImage.Format_ARGB32_Premultiplied)
+    img.fill(Qt.transparent)
+    q = QPainter(img)
+    q.setRenderHint(QPainter.Antialiasing)
+    q.scale(1 / factor, 1 / factor)
+    pintar(q)
+    q.end()
+    p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+    p.drawImage(QRectF(0, 0, ancho * factor, alto * factor), img)
 
 
 def tema_claro():
@@ -739,9 +763,13 @@ class BarraProgreso(QWidget):
         activo = self.puede and (self.encima or self.arrastre is not None)
         grosor = 6 if activo else 4
         y = (h - grosor) / 2
+        frac = self.valor if self.arrastre is None else self.arrastre
+        if ARTE.dibuja:
+            p.translate(0, round(y))
+            ARTE.barra(LienzoQt(self, p), w, grosor, frac, rgb(COLORES["verde"]), paleta())
+            return
         p.setBrush(tenue(28))
         p.drawRoundedRect(QRectF(0, y, w, grosor), grosor / 2, grosor / 2)
-        frac = self.valor if self.arrastre is None else self.arrastre
         if frac * w > 0.5:
             p.setBrush(COLORES["verde"])
             p.drawRoundedRect(QRectF(0, y, max(frac * w, grosor), grosor), grosor / 2, grosor / 2)
@@ -1062,10 +1090,19 @@ class RelojVista(QWidget):
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
+        if ARTE.pixelar and self.opciones["estilo"] in esferas.ALTOS:
+            pixelado(p, self.width(), self.height(), ARTE.pixelar, self.pintar)
+        else:
+            self.pintar(p)
+
+    def pintar(self, p):
         ahora = datetime.datetime.now()
         if self.opciones["estilo"] in esferas.ALTOS:
             esferas.reloj(LienzoQt(self, p), paleta(), self.width(), self.height(), ahora, self.opciones,
                           fecha_larga(ahora.date()), self.opciones["estilo"])
+            return
+        if ARTE.reloj(LienzoQt(self, p), paleta(), self.width(), self.height(), self.hora(ahora), ahora,
+                      self.opciones, fecha_larga(ahora.date())):
             return
         dibujar = {"analogico": self.analogico, "minimal": self.minimal,
                    "mundial": self.mundial}.get(self.opciones["estilo"], self.digital)
@@ -1243,10 +1280,7 @@ class CalendarioMes(QWidget):
             for c, dia in enumerate(semana):
                 caja = QRectF(c * cw, f * ch, cw, ch)
                 if dia == hoy:
-                    r = min(cw, ch) * 0.44
-                    p.setPen(Qt.NoPen)
-                    p.setBrush(acento())
-                    p.drawEllipse(caja.center(), r, r)
+                    ARTE.hoy(LienzoQt(self, p), caja.center().x(), caja.center().y(), min(cw, ch) * 0.44, rgb(acento()))
                     fuente.setBold(True)
                     p.setPen(QColor("white"))
                 else:
@@ -1335,8 +1369,14 @@ def css_tema(t):
     css = re.sub(r"rgba\(77, 141, 255, (\d+)\)", lambda m: f"rgba({ac.red()}, {ac.green()}, {ac.blue()}, {m.group(1)})",
                  css)
     css = re.sub(r"(\d+(?:\.\d+)?)pt", lambda m: f"{float(m.group(1)) * ESCALA:.1f}pt", css)
-    if g["fuente"]:
-        css = f'* {{ font-family: "{g["fuente"]}"; }}\n' + css
+    fuente = g["fuente"] or ARTE.fuente
+    if fuente:
+        css = f'* {{ font-family: "{fuente}"; }}\n' + css
+    if ARTE.radio_boton is not None:
+        r = ARTE.radio_boton
+        css += (f" QPushButton {{ border-radius: {r}px; }} QSlider::groove:horizontal {{ border-radius: {r}px; }}"
+                f" QSlider::sub-page:horizontal {{ border-radius: {r}px; }}"
+                f" QSlider::handle:horizontal {{ border-radius: {r}px; }}")
     return css
 
 
@@ -2334,8 +2374,15 @@ def _luna(p, cx, cy, r):
     p.drawPath(ruta.subtracted(hueco))
 
 
-def pintar_icono_tiempo(p, nombre, x, y, tam):
+def pintar_icono_tiempo(p, nombre, x, y, tam, pixelar=True):
     """Iconos del tiempo dibujados (Windows no trae los del tema de Linux)."""
+    factor = min(ARTE.pixelar, tam // 13)
+    if pixelar and factor > 1:
+        p.save()
+        p.translate(x, y)
+        pixelado(p, tam, tam, factor, lambda q: pintar_icono_tiempo(q, nombre, 0, 0, tam, False))
+        p.restore()
+        return
     p.save()
     p.setRenderHint(QPainter.Antialiasing)
     cx, cy, r = x + tam / 2, y + tam / 2, tam / 2
@@ -4234,8 +4281,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.tema = temas.completo(self.config.get("tema"))
         aplicar_colores(self.tema)
         css = css_tema(self.tema)
-        if ARTE.radio_boton is not None:
-            css += f" QPushButton {{ border-radius: {ARTE.radio_boton}px; }}"
         for t in self.tarjetas:
             t.setStyleSheet(css)
             t.ajustar_margenes()
@@ -4459,6 +4504,7 @@ def main():
         # Icono propio en la barra de tareas/bandeja en lugar del de Python.
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MoonDeck")
     qapp = QApplication(sys.argv)
+    cargar_fuentes()
     qapp.setQuitOnLastWindowClosed(False)
     qapp.setFont(QFont("Segoe UI Variable Text" if ES_WINDOWS else qapp.font().family(), 10))
     try:
