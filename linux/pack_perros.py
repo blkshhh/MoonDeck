@@ -84,6 +84,164 @@ class VentanaMancha(Gtk.Window):
         return False
 
 
+def dibujar_icono(cr, nombre, tinta):
+    """Los iconos de los botones, en un cuadro de 28 x 28."""
+    cr.set_line_width(2)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.set_line_join(cairo.LINE_JOIN_ROUND)
+
+    def forma(color):
+        cr.set_source_rgb(*color)
+        cr.fill_preserve()
+        cr.set_source_rgb(*tinta)
+        cr.stroke()
+
+    def bola(x, y, r, color):
+        cr.new_sub_path()
+        cr.arc(x, y, r, 0, 2 * math.pi)
+        forma(color)
+
+    def gota(x, y, q, color):
+        cr.new_path()
+        cr.move_to(x, y - q)
+        cr.curve_to(x + q, y, x + q * .7, y + q * .85, x, y + q * .85)
+        cr.curve_to(x - q * .7, y + q * .85, x - q, y, x, y - q)
+        forma(color)
+
+    azul, amarillo, rojo = (.33, .64, .9), (.98, .8, .25), (.89, .4, .36)
+    if nombre == "comida":  # cuenco con pienso
+        for x, y in ((9, 11), (14, 8), (19, 11), (12, 13), (17, 13)):
+            bola(x, y, 3, (.68, .42, .22))
+        cr.new_path()
+        cr.move_to(3, 14)
+        cr.line_to(25, 14)
+        cr.line_to(21, 24)
+        cr.line_to(7, 24)
+        cr.close_path()
+        forma(rojo)
+    elif nombre == "agua":
+        gota(14, 13, 11, azul)
+    elif nombre == "banar":  # bañera con burbujas
+        for x, y, r in ((9, 9, 3.4), (15, 6, 4.2), (21, 9, 3)):
+            bola(x, y, r, (1, 1, 1))
+        cr.new_path()
+        cr.rectangle(3, 13, 22, 9)
+        forma(azul)
+        cr.move_to(8, 22)
+        cr.line_to(7, 25)
+        cr.move_to(20, 22)
+        cr.line_to(21, 25)
+        cr.stroke()
+    elif nombre == "esponja":
+        cr.new_path()
+        cr.rectangle(4, 8, 20, 14)
+        forma(amarillo)
+        for x, y in ((9, 12), (15, 17), (20, 12)):
+            cr.new_path()
+            cr.arc(x, y, 1.5, 0, 2 * math.pi)
+            cr.set_source_rgb(.72, .52, .1)
+            cr.fill()
+    elif nombre == "ducha":  # alcachofa y gotas
+        cr.set_source_rgb(*tinta)
+        cr.new_path()
+        cr.move_to(21, 4)
+        cr.curve_to(14, 2, 12, 5, 12, 9)
+        cr.stroke()
+        cr.new_path()
+        cr.move_to(5, 15)
+        cr.curve_to(6, 7, 18, 7, 19, 15)
+        cr.close_path()
+        forma((.76, .8, .84))
+        for x, y in ((7, 20), (12, 23), (17, 20)):
+            gota(x, y, 2.6, azul)
+    elif nombre == "toalla":
+        cr.new_path()
+        cr.rectangle(5, 4, 18, 20)
+        forma(rojo)
+        cr.move_to(5, 16)
+        cr.line_to(23, 16)
+        cr.move_to(5, 19)
+        cr.line_to(23, 19)
+        cr.stroke()
+    elif nombre == "terminar":  # hecho
+        cr.new_path()
+        cr.set_line_width(3.6)
+        cr.move_to(5, 15)
+        cr.line_to(12, 22)
+        cr.line_to(24, 7)
+        cr.set_source_rgb(.25, .65, .38)
+        cr.stroke()
+    elif nombre == "silbato":
+        cr.new_path()
+        cr.arc(11, 16, 8, 0, 2 * math.pi)
+        forma(amarillo)
+        cr.new_path()
+        cr.rectangle(13, 7, 12, 6)
+        forma(amarillo)
+        bola(11, 16, 2.4, tinta)
+        cr.set_source_rgb(*tinta)
+        for y0, y1, x1 in ((5, 2, 5), (9, 8, 2)):
+            cr.move_to(8, y0)
+            cr.line_to(x1, y1)
+        cr.stroke()
+    elif nombre == "caseta":  # guardarlo: la caseta
+        cr.new_path()
+        cr.move_to(3, 13)
+        cr.line_to(14, 4)
+        cr.line_to(25, 13)
+        cr.close_path()
+        forma(rojo)
+        cr.new_path()
+        cr.rectangle(6, 13, 16, 11)
+        forma(amarillo)
+        cr.new_path()
+        cr.arc(14, 24, 5, math.pi, 2 * math.pi)
+        cr.close_path()
+        forma(tinta)
+    else:  # sacarlo: una huella
+        bola(14, 18, 6.5, (.68, .42, .22))
+        for x, y in ((6, 12), (11, 7), (17, 7), (22, 12)):
+            bola(x, y, 2.8, (.68, .42, .22))
+
+
+class BotonIcono(Gtk.ToggleButton):
+    """Un botón con dibujo. El nombre del texto queda como aviso al dejar el ratón encima."""
+
+    def __init__(self, icono, texto, al_pulsar, marcable=False):
+        super().__init__()
+        self.icono, self.marcable, self.cambiando = icono, marcable, False
+        self.set_tooltip_text(_(texto))
+        area = Gtk.DrawingArea()
+        area.set_size_request(28, 28)
+        area.connect("draw", self.dibujar)
+        self.area = area
+        self.add(area)
+        self.al_pulsar = al_pulsar
+        self.connect("toggled", self.pulsado)
+        self.show_all()
+
+    def pulsado(self, _b):
+        if self.cambiando:
+            return
+        if not self.marcable:
+            self.marcar(False)
+        self.al_pulsar()
+
+    def marcar(self, si):
+        self.cambiando = True
+        self.set_active(si)
+        self.cambiando = False
+
+    def cambiar(self, icono, texto):
+        self.icono = icono
+        self.set_tooltip_text(_(texto))
+        self.area.queue_draw()
+
+    def dibujar(self, _w, cr):
+        dibujar_icono(cr, self.icono, paleta()["texto"][:3])
+        return False
+
+
 class Bocadillo(Gtk.Window):
     """Lo que piensa el perro, en una nube que le sigue: un dibujo, sin textos ni barras."""
 
@@ -218,11 +376,13 @@ class Metodos:
         if not self.ventana_perro:
             return
         self.poner_herramienta("esponja")
-        self.fila_bano.show_all()
+        self.fila_bano.show()
         self.fila_cuidados.hide()
 
     def poner_herramienta(self, herramienta):
         self.herramienta_perro = herramienta
+        for clave, boton in self.botones_bano.items():
+            boton.marcar(clave == herramienta)
         self.quitar_bocadillo()
         if self.ventana_perro:
             self.ventana_perro.empezar_bano(herramienta)
@@ -234,7 +394,7 @@ class Metodos:
         if self.ventana_perro:
             self.ventana_perro.acabar_bano()
         self.fila_bano.hide()
-        self.fila_cuidados.show_all()
+        self.fila_cuidados.show()
         self.ajustar_alturas()
 
     def quitar_bocadillo(self):
@@ -304,7 +464,10 @@ class Metodos:
         self.pasar_estado()
 
     def pintar_perro(self):
-        self.boton_perro.set_label(_("Guardar") if self.partida_perro.d["fuera"] else _("Sacar"))
+        if self.partida_perro.d["fuera"]:
+            self.boton_perro.cambiar("caseta", "Guardar")
+        else:
+            self.boton_perro.cambiar("huella", "Sacar")
 
     def vivir_perro(self):
         toca = self.partida_perro.avanzar()
@@ -327,31 +490,21 @@ def construir(self, s):
     c = self.tarjeta("perros", "Perro")
     p = self.partida_perro
     fila = self.fila_cuidados = caja(False, 6)
-    for texto, fn in (("Comida", lambda _b: self.cuidar_perro(p.comer)), ("Agua", lambda _b: self.cuidar_perro(p.beber)),
-                      ("Bañar", self.banar_perro)):
-        b = Gtk.Button(label=_(texto))
-        b.connect("clicked", fn)
-        fila.pack_start(b, True, True, 0)
+    for icono, texto, fn in (("comida", "Comida", lambda: self.cuidar_perro(p.comer)),
+                             ("agua", "Agua", lambda: self.cuidar_perro(p.beber)), ("banar", "Bañar", self.banar_perro),
+                             ("silbato", "Llamar", self.llamar_perro)):
+        fila.pack_start(BotonIcono(icono, texto, fn), True, True, 0)
+    self.boton_perro = BotonIcono("caseta", "Guardar", self.alternar_perro)
+    fila.pack_start(self.boton_perro, True, True, 0)
     c.add_w(fila)
     fila = self.fila_bano = caja(False, 6)
     fila.set_no_show_all(True)
-    for texto, clave in (("Esponja", "esponja"), ("Ducha", "ducha"), ("Toalla", "toalla")):
-        b = Gtk.Button(label=_(texto))
-        b.connect("clicked", lambda _b, h=clave: self.poner_herramienta(h))
-        b.show()
+    self.botones_bano = {}
+    for clave, texto in (("esponja", "Esponja"), ("ducha", "Ducha"), ("toalla", "Toalla")):
+        b = BotonIcono(clave, texto, lambda h=clave: self.poner_herramienta(h), marcable=True)
+        self.botones_bano[clave] = b
         fila.pack_start(b, True, True, 0)
-    b = Gtk.Button(label=_("Terminar"))
-    b.connect("clicked", self.terminar_bano)
-    b.show()
-    fila.pack_start(b, True, True, 0)
-    c.add_w(fila)
-    fila = caja(False, 6)
-    b = Gtk.Button(label=_("Llamar"))
-    b.connect("clicked", self.llamar_perro)
-    fila.pack_start(b, True, True, 0)
-    self.boton_perro = Gtk.Button(label=_("Guardar"))
-    self.boton_perro.connect("clicked", self.alternar_perro)
-    fila.pack_start(self.boton_perro, True, True, 0)
+    fila.pack_start(BotonIcono("terminar", "Terminar", self.terminar_bano), True, True, 0)
     c.add_w(fila)
 
 

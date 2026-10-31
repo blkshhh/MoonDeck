@@ -35,7 +35,7 @@ class VentanaCan(Gtk.Window):
         super().__init__()
         self.al_hacer, self.al_acariciar, self.al_frotar, self.al_tic = al_hacer, al_acariciar, al_frotar, al_tic
         self.herramienta = None  # en el baño: "esponja", "ducha" o "toalla"
-        self.antes_raton = None
+        self.antes_raton = self.antes_giro = None
         self.set_visual(self.get_screen().get_rgba_visual())
         self.set_app_paintable(True)
         self.set_default_size(LADO, LADO)
@@ -71,7 +71,7 @@ class VentanaCan(Gtk.Window):
         self.area.add_tick_callback(self.tic)
 
     def soltar(self, *_):
-        self.antes_raton, self.can.chorro = None, None
+        self.antes_raton, self.antes_giro, self.can.chorro = None, None, None
 
     def poner_diseno(self, diseno):
         self.can.diseno = diseno
@@ -121,6 +121,12 @@ class VentanaCan(Gtk.Window):
     def raton(self, _w, e):
         self.can.raton = (self.can.x + (e.x - LADO / 2) / ESC, self.can.y + (e.y - PIE_Y) / ESC)
         pulsado = e.state & Gdk.ModifierType.BUTTON1_MASK
+        if self.herramienta and e.state & Gdk.ModifierType.BUTTON3_MASK:  # clic derecho: girarlo
+            if self.antes_giro is not None:
+                self.can.yaw -= (e.x - self.antes_giro) * .012
+            self.antes_giro = e.x
+            return
+        self.antes_giro = None
         if self.herramienta:
             if pulsado:
                 self.frotando(e)

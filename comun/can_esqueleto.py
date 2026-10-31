@@ -14,7 +14,8 @@ CAMARA = 0.36  # lo que se mira desde arriba
 PIEL, CLARO, MANCHA, OREJA, OJO, TINTA, LENGUA, BARRO, ESPUMA, GOTA = range(10)
 # Dónde se ensucia: (largo del lomo, ángulo alrededor) en el cuerpo y (arriba, lado) en la cabeza
 ANCLAS_CUERPO = tuple(((i % 6 + .5) / 6, i * 2.4) for i in range(18))
-ANCLAS_CABEZA = ((-.5, -.6), (-.5, .6), (-.8, 0), (-.1, -.9), (-.1, .9), (.2, 0))
+# En la cabeza: (arriba, lado, delante): las de delante van a los lados de la cara, sin tapar los ojos
+ANCLAS_CABEZA = ((-.5, -.6, -1), (-.5, .6, -1), (-.8, 0, 1), (.25, -.85, 1), (.25, .85, 1), (.2, 0, -1))
 NUM_ANCLAS = len(ANCLAS_CUERPO) + len(ANCLAS_CABEZA)
 ZANCADA, LEVANTA = 26, 20
 LADOS, FASES = (1, -1, 1, -1), (0, .5, .25, .75)
@@ -126,8 +127,6 @@ class Can:
             objetivo = math.atan2(dy * 1.7, dx)
         elif accion == "patita":
             objetivo = math.pi / 2 - .3
-        elif accion == "banio":
-            objetivo = self.yaw + (0 if self.chorro else .25)  # se va dando la vuelta
         dif = math.atan2(math.sin(objetivo - self.yaw), math.cos(objetivo - self.yaw))
         self.yaw += dif * min(1, dt * 7)
         if accion in ("pis", "caca") and not anda and w["pis" if accion == "pis" else "sentado"] > .8:
@@ -294,23 +293,23 @@ class Can:
         cruz = _girar((cadera[0] - 6, cadera[1] - r * .75, 0), self.yaw)
         panza = _girar((medio[0] + 14, medio[1] + r * 1.05, 0), self.yaw)
         pecho = _girar((hombro[0] + r * .9, hombro[1] + 10, 0), self.yaw)
-        coronilla = en_cabeza((-R * .15, -R * .8, 0))
+        coronilla = _girar(en_cabeza((-R * .15, -R * .8, 0)), self.yaw)
         tintes = [(cruz, r * .92, MANCHA, 1), (panza, r * .78, CLARO, 1), (pecho, r * .6, CLARO, 1), (coronilla, R * .55, MANCHA, 1)]
         self.anclas = []
         for lar, ang in ANCLAS_CUERPO:
             base = _mez(cadera, hombro, lar)
             q = (base[0], base[1] + math.cos(ang) * r * .96, base[2] + math.sin(ang) * r * .96)
             self.anclas.append(_girar(q, self.yaw))
-        for alto, lado in ANCLAS_CABEZA:
+        for alto, lado, delante in ANCLAS_CABEZA:
             d = math.sqrt(max(0, 1 - alto * alto - lado * lado))
-            self.anclas.append(en_cabeza((-d * R * .9, alto * R * .95, lado * R * .95)))
+            self.anclas.append(_girar(en_cabeza((delante * d * R * .92, alto * R * .92, lado * R * .92)), self.yaw))
         for i, q in enumerate(self.anclas):
             if self.barro[i] > .02:
                 tintes.append((q, 15 + (i * 7 % 9), BARRO, min(self.barro[i] * 1.3, .9)))
             e = self.espuma[i]
             if e > .05:
                 lista.append((q, q, 8 + e * 11, 8 + e * 11, ESPUMA))
-                otro = (q[0] + 9 * (1 if i % 2 else -1), q[1] - 6, q[2] + 4)
+                otro = (q[0] + 5 * (1 if i % 2 else -1), q[1] - 4, q[2] + 2)
                 lista.append((otro, otro, 5 + e * 7, 5 + e * 7, ESPUMA))
         if self.chorro:
             for i in range(7):
