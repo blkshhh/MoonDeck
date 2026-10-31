@@ -204,11 +204,12 @@ class Metodos:
                 menu.addAction(_("Mover a la izquierda"), lambda: self.mover_app(i, i - 1))
             if i < len(apps) - 1:
                 menu.addAction(_("Mover a la derecha"), lambda: self.mover_app(i, i + 1))
-        sub = menu.addMenu(_("Color de los iconos"))
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.color_apps(c))
-            a.setCheckable(True)
-            a.setChecked(self.config.get("apps_color", "original") == clave)
+        if self.menu_de_titulo:
+            sub = menu.addMenu(_("Color de los iconos"))
+            for clave, nombre in lanzador.COLORES_ICONOS:
+                a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.color_apps(c))
+                a.setCheckable(True)
+                a.setChecked(self.config.get("apps_color", "original") == clave)
         menu.addSeparator()
 
     def anadir_apps(self, padre=None):

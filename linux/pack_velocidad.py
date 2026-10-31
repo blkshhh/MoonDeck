@@ -150,10 +150,11 @@ def arrancar(self):
 
 
 def menu(self, tarjeta, menu):
-    sub = self.submenu(menu, "Estilo del velocímetro")
-    for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-        self.item(sub, nombre, lambda c=clave: self.cambiar_velocimetro(c), self.vel_reloj.estilo == clave)
-    menu.append(Gtk.SeparatorMenuItem())
+    if self.menu_de_titulo:
+        sub = self.submenu(menu, "Estilo del velocímetro")
+        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+            self.item(sub, nombre, lambda c=clave: self.cambiar_velocimetro(c), self.vel_reloj.estilo == clave)
+        menu.append(Gtk.SeparatorMenuItem())
 
 
 def ajustes(self, cont):

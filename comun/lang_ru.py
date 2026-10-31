@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': 'Неделя начинается с',
     'Reloj': 'Часы',
     'Tipo de reloj': 'Тип часов',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': 'Города мировых часов: правый щелчок по часам',
     'Títulos': 'Заголовки',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': 'Название вверху каждого виджета (CPU, ЧАСЫ…).',
     'Fondo': 'Фон',
@@ -312,7 +311,6 @@ TEXTOS = {
     ' del panel': ' панели',
     'Automáticas (por columnas)': 'Автоматические (по столбцам)',
     'Busca la última versión estable en github.com/{repo}. Tu configuración se conserva.': 'Ищет последнюю стабильную версию на github.com/{repo}. Ваши настройки сохраняются.',
-    'Ningún sensor elegido: clic derecho > «Elegir sensores…»': 'Датчики не выбраны: правый щелчок > «Выбрать датчики…»',
     '{n} hilos · Encendido {tiempo}': '{n} потоков · Работает {tiempo}',
     'VRAM —': 'VRAM —',
     'L {v}': 'Ч {v}',
@@ -886,4 +884,7 @@ TEXTOS = {
     'Unsplash no tiene fotos con esas etiquetas.': 'На Unsplash нет фото с этими метками.',
     'Unsplash ha fallado ({codigo}).': 'Сбой Unsplash ({codigo}).',
     'No se pudo conectar con Unsplash.': 'Не удалось подключиться к Unsplash.',
+    'Ningún sensor elegido: elígelos en Configuración > Opciones de widgets.': 'Датчики не выбраны: выберите их в разделе Настройки > Параметры виджетов.',
+    'Elegir…': 'Выбрать…',
+    'Sensores que se muestran': 'Показываемые датчики',
 }

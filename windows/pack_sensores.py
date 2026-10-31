@@ -254,7 +254,7 @@ class Metodos:
                     color = color_temp(valor) if tipo == "Temperature" else M.C_CLARO
                     lineas.append(("sensor", f"{hw} · {nombre}", fmt_sensor(tipo, valor, color=False), color))
         if not lineas:
-            lineas = [("mas", _("Ningún sensor elegido: clic derecho > «Elegir sensores…»"))]
+            lineas = [("mas", _("Ningún sensor elegido: elígelos en Configuración > Opciones de widgets."))]
         self.sens_lista.set_lineas(lineas)
 
     def elegir_sensores(self, padre=None):
@@ -287,9 +287,9 @@ def aplicar(self, s):
     self.pintar_sensores(s)
 
 
-def acciones(self, menu, padre):
-    menu.addAction(_("Elegir sensores…"), lambda: self.elegir_sensores(padre))
-
-
-def menu(self, tarjeta, menu):
-    menu.addAction(_("Elegir sensores…"), lambda: self.elegir_sensores(tarjeta.window()))
+def ajustes(self, caja):
+    """Configuración > Opciones de widgets (self es la ventana)."""
+    lista = self.grupo(caja, "Sensores")
+    elegir = QPushButton(_("Elegir…"))
+    elegir.clicked.connect(lambda: self.app.elegir_sensores(self))
+    self.fila(lista, "Sensores que se muestran", elegir)

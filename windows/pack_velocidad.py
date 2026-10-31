@@ -156,12 +156,13 @@ def arrancar(self):
 
 
 def menu(self, tarjeta, menu):
-    sub = menu.addMenu(_("Estilo del velocímetro"))
-    for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
-        a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.cambiar_velocimetro(c))
-        a.setCheckable(True)
-        a.setChecked(self.vel_reloj.estilo == clave)
-    menu.addSeparator()
+    if self.menu_de_titulo:
+        sub = menu.addMenu(_("Estilo del velocímetro"))
+        for clave, nombre in esferas.ESTILOS_VELOCIMETRO:
+            a = sub.addAction(_(nombre), lambda _x=False, c=clave: self.cambiar_velocimetro(c))
+            a.setCheckable(True)
+            a.setChecked(self.vel_reloj.estilo == clave)
+        menu.addSeparator()
 
 
 def ajustes(self, caja):

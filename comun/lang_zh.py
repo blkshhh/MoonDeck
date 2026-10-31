@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': '每周开始于',
     'Reloj': '时钟',
     'Tipo de reloj': '时钟类型',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': '世界时钟的城市：在时钟上点右键',
     'Títulos': '标题',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': '每个小组件顶部显示的名称（CPU、时钟…）。',
     'Fondo': '背景',
@@ -312,7 +311,6 @@ TEXTOS = {
     ' del panel': '（面板）',
     'Automáticas (por columnas)': '自动（按列）',
     'Busca la última versión estable en github.com/{repo}. Tu configuración se conserva.': '在 github.com/{repo} 查找最新稳定版。你的设置会保留。',
-    'Ningún sensor elegido: clic derecho > «Elegir sensores…»': '没有选择传感器：右键 >“选择传感器…”',
     '{n} hilos · Encendido {tiempo}': '{n} 线程 · 已运行 {tiempo}',
     'VRAM —': 'VRAM —',
     'L {v}': '读 {v}',
@@ -886,4 +884,7 @@ TEXTOS = {
     'Unsplash no tiene fotos con esas etiquetas.': 'Unsplash 没有这些标签的照片。',
     'Unsplash ha fallado ({codigo}).': 'Unsplash 出错({codigo})。',
     'No se pudo conectar con Unsplash.': '无法连接到 Unsplash。',
+    'Ningún sensor elegido: elígelos en Configuración > Opciones de widgets.': '未选择传感器:请在 设置 > 小组件选项 中选择。',
+    'Elegir…': '选择…',
+    'Sensores que se muestran': '显示的传感器',
 }

@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': 'Week starts on',
     'Reloj': 'Clock',
     'Tipo de reloj': 'Clock type',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': 'World clock cities: right-click the clock',
     'Títulos': 'Titles',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': 'The name shown at the top of each widget (CPU, CLOCK…).',
     'Fondo': 'Background',
@@ -312,7 +311,6 @@ TEXTOS = {
     ' del panel': ' of the panel',
     'Automáticas (por columnas)': 'Automatic (in columns)',
     'Busca la última versión estable en github.com/{repo}. Tu configuración se conserva.': 'Looks for the latest stable version at github.com/{repo}. Your settings are kept.',
-    'Ningún sensor elegido: clic derecho > «Elegir sensores…»': 'No sensor chosen: right-click > “Choose sensors…”',
     '{n} hilos · Encendido {tiempo}': '{n} threads · Up {tiempo}',
     'VRAM —': 'VRAM —',
     'L {v}': 'R {v}',
@@ -886,4 +884,7 @@ TEXTOS = {
     'Unsplash no tiene fotos con esas etiquetas.': 'Unsplash has no photos with those tags.',
     'Unsplash ha fallado ({codigo}).': 'Unsplash failed ({codigo}).',
     'No se pudo conectar con Unsplash.': "Couldn't connect to Unsplash.",
+    'Ningún sensor elegido: elígelos en Configuración > Opciones de widgets.': 'No sensor selected: choose them in Settings > Widget options.',
+    'Elegir…': 'Choose…',
+    'Sensores que se muestran': 'Sensors shown',
 }

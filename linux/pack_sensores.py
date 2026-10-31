@@ -290,7 +290,7 @@ class Metodos:
                     color = color_temp(valor) if tipo == "Temperature" else temas.a_hex(M.CLARO)
                     lineas.append(("sensor", f"{hw} · {nombre}", fmt_sensor(tipo, valor), color))
         if not lineas:
-            lineas = [("mas", _("Ningún sensor elegido: clic derecho > «Elegir sensores…»"))]
+            lineas = [("mas", _("Ningún sensor elegido: elígelos en Configuración > Opciones de widgets."))]
         self.sens_lista.set_lineas(lineas)
 
     def elegir_sensores(self):
@@ -324,9 +324,9 @@ def aplicar(self, s):
     self.pintar_sensores(s)
 
 
-def acciones(self, menu):
-    self.item(menu, "Elegir sensores…", self.elegir_sensores)
-
-
-def menu(self, tarjeta, menu):
-    self.item(menu, "Elegir sensores…", self.elegir_sensores)
+def ajustes(self, cont):
+    """Configuración > Opciones de widgets (self es la ventana)."""
+    lista = self.grupo(cont, "Sensores")
+    elegir = Gtk.Button(label=_("Elegir…"))
+    elegir.connect("clicked", lambda _b: self.app.elegir_sensores())
+    self.fila(lista, "Sensores que se muestran", elegir)
