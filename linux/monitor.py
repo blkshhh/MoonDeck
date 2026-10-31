@@ -2822,11 +2822,15 @@ class VentanaConfig(Gtk.Window):
             tipo.append(clave, _(nombre))
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
-        self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
+        self.fila(lista, "Tipo de reloj", tipo)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             sw = Gtk.Switch(active=bool(o[clave]))
             sw.connect("notify::active", lambda w, _p, c=clave: app.cambiar_reloj(**{c: w.get_active()}))
             self.fila(lista, texto, sw)
+        ciudades = Gtk.MenuButton(label=_("Elegir…"), popup=Gtk.Menu())
+        app.menu_ciudades(ciudades.get_popup())
+        ciudades.get_popup().show_all()
+        self.fila(lista, "Ciudades (reloj mundial, hasta 8)", ciudades)
         nixie = Gtk.ColorButton(rgba=Gdk.RGBA(*hex_rgb(o.get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
         nixie.connect("color-set", lambda b: app.cambiar_reloj(nixie=temas.a_hex(
             (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
@@ -3983,16 +3987,19 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
             for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
                 self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
-        ciudades = self.submenu(menu, "Ciudades (reloj mundial, hasta 8)")
-        for nombre, zona in CIUDADES:
-            self.item(ciudades, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in o["zonas"])
         if self.menu_de_titulo and o["estilo"] == "nixie":
             actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
             sub = self.submenu(menu, "Color de los tubos")
             for color, nombre in esferas.COLORES_NIXIE:
                 self.item(sub, nombre, lambda c=color: self.cambiar_reloj(nixie=c), actual == color)
             self.item(sub, "Otro color…", self.elegir_color_nixie)
-        menu.append(Gtk.SeparatorMenuItem())
+        if self.menu_de_titulo:
+            menu.append(Gtk.SeparatorMenuItem())
+
+    def menu_ciudades(self, menu):
+        zonas = self.config["reloj"]["zonas"]
+        for nombre, zona in CIUDADES:
+            self.item(menu, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in zonas)
 
     def elegir_color_nixie(self):
         d = Gtk.ColorChooserDialog(title=_("Color de los tubos"))

@@ -2985,7 +2985,7 @@ class VentanaConfig(QWidget):
             tipo.addItem(_(nombre), clave)
         tipo.setCurrentIndex(max(0, tipo.findData(o["estilo"])))
         tipo.currentIndexChanged.connect(lambda i: app.cambiar_reloj(estilo=tipo.itemData(i)))
-        self.fila(lista, "Tipo de reloj", tipo, "Las ciudades del reloj mundial, con clic derecho en el reloj")
+        self.fila(lista, "Tipo de reloj", tipo)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             ch = QCheckBox()
             ch.setChecked(bool(o[clave]))
@@ -3005,6 +3005,10 @@ class VentanaConfig(QWidget):
         pintar_nixie()
         nixie.clicked.connect(elegir_nixie)
         self.fila(lista, "Color de los tubos Nixie", nixie)
+        ciudades = QPushButton(_("Elegir…"))
+        ciudades.setMenu(QMenu(ciudades))
+        app.menu_ciudades(ciudades.menu())
+        self.fila(lista, "Ciudades (reloj mundial, hasta 8)", ciudades)
 
         if ES_WINDOWS:
             self.ajustes_teclado(caja)
@@ -4132,11 +4136,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
                 a.setCheckable(True)
                 a.setChecked(o[clave])
-        ciudades = menu.addMenu(_("Ciudades (reloj mundial, hasta 8)"))
-        for nombre, zona in CIUDADES:
-            a = ciudades.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
-            a.setCheckable(True)
-            a.setChecked(zona in o["zonas"])
         if self.menu_de_titulo and o["estilo"] == "nixie":
             actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
             sub = menu.addMenu(_("Color de los tubos"))
@@ -4145,7 +4144,15 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a.setCheckable(True)
                 a.setChecked(actual == color)
             sub.addAction(_("Otro color…"), lambda: self.elegir_color_nixie())
-        menu.addSeparator()
+        if self.menu_de_titulo:
+            menu.addSeparator()
+
+    def menu_ciudades(self, menu):
+        zonas = self.config["reloj"]["zonas"]
+        for nombre, zona in CIUDADES:
+            a = menu.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
+            a.setCheckable(True)
+            a.setChecked(zona in zonas)
 
     def elegir_color_nixie(self, padre=None):
         c = QColorDialog.getColor(QColor(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), padre,

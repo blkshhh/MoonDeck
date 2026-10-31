@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': 'Неделя начинается с',
     'Reloj': 'Часы',
     'Tipo de reloj': 'Тип часов',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': 'Города мировых часов: правый щелчок по часам',
     'Títulos': 'Заголовки',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': 'Название вверху каждого виджета (CPU, ЧАСЫ…).',
     'Fondo': 'Фон',

@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': 'Week starts on',
     'Reloj': 'Clock',
     'Tipo de reloj': 'Clock type',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': 'World clock cities: right-click the clock',
     'Títulos': 'Titles',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': 'The name shown at the top of each widget (CPU, CLOCK…).',
     'Fondo': 'Background',

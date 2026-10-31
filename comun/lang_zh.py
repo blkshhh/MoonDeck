@@ -130,7 +130,6 @@ TEXTOS = {
     'La semana empieza en': '每周开始于',
     'Reloj': '时钟',
     'Tipo de reloj': '时钟类型',
-    'Las ciudades del reloj mundial, con clic derecho en el reloj': '世界时钟的城市：在时钟上点右键',
     'Títulos': '标题',
     'El nombre que sale arriba de cada widget (CPU, RELOJ…).': '每个小组件顶部显示的名称（CPU、时钟…）。',
     'Fondo': '背景',
