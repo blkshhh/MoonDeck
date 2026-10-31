@@ -855,6 +855,7 @@ TEXTOS = {
     'Última lectura: {hora}': '上次读取:{hora}',
     'Fotos de Unsplash detrás de las tarjetas del modo panel, con tu clave gratuita.': '面板模式下卡片背后的 Unsplash 照片,使用你的免费密钥。',
     'Fondos de Unsplash': 'Unsplash 背景',
+    'Aplicar': '应用',
     'Una foto detrás de las tarjetas, en lugar del color del panel.': '卡片背后的照片,替代面板颜色。',
     'Activar fondos': '启用背景',
     'Clave de acceso': '访问密钥',

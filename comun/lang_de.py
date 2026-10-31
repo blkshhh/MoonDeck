@@ -855,6 +855,7 @@ TEXTOS = {
     'Última lectura: {hora}': 'Letzte Messung: {hora}',
     'Fotos de Unsplash detrás de las tarjetas del modo panel, con tu clave gratuita.': 'Unsplash-Fotos hinter den Karten im Panelmodus, mit deinem kostenlosen Schlüssel.',
     'Fondos de Unsplash': 'Unsplash-Hintergründe',
+    'Aplicar': 'Anwenden',
     'Una foto detrás de las tarjetas, en lugar del color del panel.': 'Ein Foto hinter den Karten, anstelle der Panelfarbe.',
     'Activar fondos': 'Hintergründe aktivieren',
     'Clave de acceso': 'Zugriffsschlüssel',
