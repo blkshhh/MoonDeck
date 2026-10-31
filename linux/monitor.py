@@ -2190,7 +2190,10 @@ class VentanaPanel(VentanaCristal):
         self.tam = (g.width, g.height - 40) if g else (1920, 1040)  # hasta que COSMIC diga el real
         if not CAPAS and monitor:
             self.set_default_size(g.width, g.height)
-        superposicion = Gtk.Overlay()
+        self.imagen = None       # foto de fondo, del tamaño del panel (la pone un pack)
+        self.franja = None       # controles de abajo (los pone un pack)
+        self.reserva_abajo = 0   # lo que esos controles le quitan a la cuadrícula
+        superposicion = self.superposicion = Gtk.Overlay()
         self.lienzo = Lienzo(self)
         self.lienzo.connect("draw", self.dibujar)
         superposicion.add(self.lienzo)
@@ -2209,6 +2212,7 @@ class VentanaPanel(VentanaCristal):
         superposicion.show_all()
         if not CAPAS and monitor:
             self.fullscreen_on_monitor(self.get_screen(), app.indice_monitor(monitor))
+        packs.llamar(app.packs, "panel", app, self)
 
     def rects_blur(self):
         a = self.get_allocation()
@@ -2338,7 +2342,7 @@ class VentanaPanel(VentanaCristal):
 
     def area(self):
         arriba = self.MARGEN_EDICION if self.editando else self.MARGEN
-        return self.MARGEN, arriba, self.tam[0] - 2 * self.MARGEN, self.tam[1] - arriba - self.MARGEN
+        return self.MARGEN, arriba, self.tam[0] - 2 * self.MARGEN, self.tam[1] - arriba - self.MARGEN - self.reserva_abajo
 
     def tam_celda(self):
         _, _, aw, ah = self.area()
@@ -2456,6 +2460,9 @@ class VentanaPanel(VentanaCristal):
 
     def dibujar(self, _w, cr):
         w, h = self.lienzo.get_allocated_width(), self.lienzo.get_allocated_height()
+        if self.imagen:
+            Gdk.cairo_set_source_pixbuf(cr, self.imagen, 0, 0)
+            cr.paint()
         pintar_fondo(cr, self.app.tema["panel"], w, h, 1.0, "panel_")
         if self.editando:
             cr.set_line_width(1)
@@ -2870,6 +2877,7 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
         self.fila(lista, "Color", self.color(s, "panel_fondo"))
         self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        packs.llamar(self.app.packs, "ajustes_panel", self, cont)
         self.pagina_tarjetas(cont, s)
 
     def numero(self, clave, minimo, maximo, paso, digitos, fn):
