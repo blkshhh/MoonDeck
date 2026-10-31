@@ -855,6 +855,7 @@ TEXTOS = {
     'Última lectura: {hora}': 'Последнее чтение: {hora}',
     'Fotos de Unsplash detrás de las tarjetas del modo panel, con tu clave gratuita.': 'Фото Unsplash за карточками в режиме панели, с вашим бесплатным ключом.',
     'Fondos de Unsplash': 'Фоны Unsplash',
+    'Aplicar': 'Применить',
     'Una foto detrás de las tarjetas, en lugar del color del panel.': 'Фото за карточками вместо цвета панели.',
     'Activar fondos': 'Включить фоны',
     'Clave de acceso': 'Ключ доступа',

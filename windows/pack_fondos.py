@@ -1,7 +1,5 @@
 """Fondos de Unsplash en el modo panel (Windows), con controles en una franja debajo de la cuadrícula."""
 
-import html
-
 from __main__ import *  # noqa: F403 - las piezas de monitor.py (etiqueta, Tarjeta, Dibujo...)
 import __main__ as M  # lo que cambia mientras corre (colores del tema, ANCHO...)
 import fondos
@@ -27,20 +25,15 @@ class Franja(QWidget):
         fila = QHBoxLayout(self)
         fila.setContentsMargins(24, 0, 24, 0)
         fila.setSpacing(6)
-        self.credito = QLabel()
-        self.credito.setOpenExternalLinks(True)
-        self.credito.setStyleSheet("color: #fff; background: transparent;")
         self.b_anterior = boton_icono("anterior")
         self.b_pausa = boton_icono("pausa", 14)
         self.b_siguiente = boton_icono("siguiente")
-        self.estado = QLabel(alignment=Qt.AlignRight | Qt.AlignVCenter)
-        self.estado.setStyleSheet("color: #fff; background: transparent;")
-        fila.addWidget(self.credito, 1)
+        fila.addStretch(1)
         for b, fn in ((self.b_anterior, app.fondos.anterior), (self.b_pausa, app.pausar_fondo),
                       (self.b_siguiente, app.fondos.siguiente)):
             b.clicked.connect(lambda _c=False, f=fn: f())
             fila.addWidget(b)
-        fila.addWidget(self.estado, 1)
+        fila.addStretch(1)
 
     def paintEvent(self, _e):
         p = QPainter(self)
@@ -93,27 +86,8 @@ class Metodos:
         if not v or not v.franja:
             return
         fr = v.franja
-        foto = f.foto
-        if foto:
-            enlace = f'<a style="color:#fff" href="{html.escape(foto["perfil"])}">{html.escape(foto["autor"])}</a>'
-            web = f'<a style="color:#fff" href="{html.escape(fondos.WEB)}">Unsplash</a>'
-            fr.credito.setText(_("Foto de {autor} en {web}").format(autor=enlace, web=web))
-        else:
-            fr.credito.setText("")
         poner_icono(fr.b_pausa, "play" if f.cfg["pausado"] else "pausa", 14)
         fr.b_anterior.setEnabled(f.cfg["indice"] > 0)
-        falta = f.restante()
-        if not f.cfg["clave"].strip():
-            texto = _("Pon tu clave en Configuración > Panel.")
-        elif f.error:
-            texto = f.error
-        elif f.cfg["pausado"]:
-            texto = _("En pausa")
-        elif falta is not None:
-            texto = _("Cambia en {n} min").format(n=falta // 60 + 1)
-        else:
-            texto = ""
-        fr.estado.setText(texto)
 
     def vigilar_fondos(self):
         f, v = self.fondos, self.panel
@@ -164,8 +138,14 @@ def ajustes_panel(self, caja):
     clave.textChanged.connect(lambda t: f.escribir(clave=t.strip()))
     self.fila(lista, "Clave de acceso", clave, "Gratis en unsplash.com/developers")
     tags = QLineEdit(c["etiquetas"])
-    tags.textChanged.connect(lambda t: f.escribir(etiquetas=t))
-    self.fila(lista, "Etiquetas", tags, "Separadas por comas. Cada tanda usa una de ellas.")
+    tags.textChanged.connect(lambda t: f.apuntar(etiquetas=t))
+    aplicar = QPushButton(_("Aplicar"))
+    aplicar.clicked.connect(lambda _c=False: f.aplicar())
+    control = QHBoxLayout()
+    control.setSpacing(6)
+    control.addWidget(tags)
+    control.addWidget(aplicar)
+    self.fila(lista, "Etiquetas", control, "Separadas por comas. Cada tanda usa una de ellas.")
     modo = QComboBox()
     for ident, nombre in fondos.MODOS:
         modo.addItem(_(nombre), ident)

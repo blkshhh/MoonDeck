@@ -85,12 +85,19 @@ class Fondos:
         self._reprogramar()
         self.guardar()
 
-    def escribir(self, **cambios):
-        """Clave o etiquetas según se teclean: quedan apuntadas al momento, aunque se cierre
-        la página, y la búsqueda nueva espera a que se deje de escribir."""
+    def apuntar(self, **cambios):
+        """Lo tecleado queda apuntado al momento, aunque se cierre la página."""
         self.cfg.update(cambios)
         self._sin_guardar = True
+
+    def escribir(self, **cambios):
+        """Como apuntar, y la búsqueda nueva espera a que se deje de escribir."""
+        self.apuntar(**cambios)
         self._tecleo = time.monotonic()
+
+    def aplicar(self):
+        """Busca ya: comprobar() lo hace en cuanto puede, aunque haya una descarga en marcha."""
+        self._tecleo = time.monotonic() - ESPERA_TECLEO
 
     def comprobar(self):
         """Llamar cada segundo desde la interfaz: cambia de fondo cuando toca y guarda lo pendiente."""

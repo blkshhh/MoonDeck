@@ -28,26 +28,19 @@ class Franja(Gtk.EventBox):
         self.set_visible_window(False)
         self.set_size_request(-1, ALTO_FRANJA)
         fila = caja(False, 6)
-        fila.set_margin_start(24)
-        fila.set_margin_end(24)
-        self.credito = Gtk.Label(xalign=0, ellipsize=Pango.EllipsizeMode.END)
+        fila.set_halign(Gtk.Align.CENTER)
+        fila.set_valign(Gtk.Align.CENTER)
         self.b_anterior = boton_icono("media-skip-backward-symbolic")
         self.b_pausa = boton_icono("media-playback-pause-symbolic")
         self.b_siguiente = boton_icono("media-skip-forward-symbolic")
-        self.estado = Gtk.Label(xalign=1, ellipsize=Pango.EllipsizeMode.END)
-        grupo = Gtk.SizeGroup(mode=Gtk.SizeGroupMode.HORIZONTAL)
-        grupo.add_widget(self.credito)
-        grupo.add_widget(self.estado)
-        fila.pack_start(self.credito, True, True, 0)
         for b, fn in ((self.b_anterior, app.fondos.anterior), (self.b_pausa, app.pausar_fondo),
                       (self.b_siguiente, app.fondos.siguiente)):
             b.connect("clicked", lambda _b, f=fn: f())
             fila.pack_start(b, False, False, 0)
-        fila.pack_start(self.estado, True, True, 0)
         self.add(fila)
         css = Gtk.CssProvider()
         css.load_from_data(CSS_FRANJA)
-        for w in (self.credito, self.estado, self.b_anterior, self.b_pausa, self.b_siguiente):
+        for w in (self.b_anterior, self.b_pausa, self.b_siguiente):
             w.get_style_context().add_provider(css, Gtk.STYLE_PROVIDER_PRIORITY_USER)
         fila.connect("draw", self._pintar)
         self.show_all()
@@ -109,29 +102,9 @@ class Metodos:
         if not v or not v.franja:
             return
         fr = v.franja
-        foto = f.foto
-        if foto:
-            autor = GLib.markup_escape_text(foto["autor"])
-            enlace = f'<a href="{GLib.markup_escape_text(foto["perfil"])}">{autor}</a>'
-            web = f'<a href="{GLib.markup_escape_text(fondos.WEB)}">Unsplash</a>'
-            fr.credito.set_markup(_("Foto de {autor} en {web}").format(autor=enlace, web=web))
-        else:
-            fr.credito.set_text("")
         poner_icono(fr.b_pausa, "media-playback-start-symbolic" if f.cfg["pausado"]
                     else "media-playback-pause-symbolic")
         fr.b_anterior.set_sensitive(f.cfg["indice"] > 0)
-        falta = f.restante()
-        if not f.cfg["clave"].strip():
-            texto = _("Pon tu clave en Configuración > Panel.")
-        elif f.error:
-            texto = f.error
-        elif f.cfg["pausado"]:
-            texto = _("En pausa")
-        elif falta is not None:
-            texto = _("Cambia en {n} min").format(n=falta // 60 + 1)
-        else:
-            texto = ""
-        poner_texto(fr.estado, texto)
 
     def vigilar_fondos(self):
         f, v = self.fondos, self.panel
@@ -182,8 +155,13 @@ def ajustes_panel(self, cont):
     clave.connect("changed", lambda w: f.escribir(clave=w.get_text().strip()))
     self.fila(lista, "Clave de acceso", clave, "Gratis en unsplash.com/developers")
     tags = Gtk.Entry(text=c["etiquetas"], width_chars=24)
-    tags.connect("changed", lambda w: f.escribir(etiquetas=w.get_text()))
-    self.fila(lista, "Etiquetas", tags, "Separadas por comas. Cada tanda usa una de ellas.")
+    tags.connect("changed", lambda w: f.apuntar(etiquetas=w.get_text()))
+    aplicar = Gtk.Button(label=_("Aplicar"))
+    aplicar.connect("clicked", lambda _b: f.aplicar())
+    control = caja(False, 6)
+    control.pack_start(tags, False, False, 0)
+    control.pack_start(aplicar, False, False, 0)
+    self.fila(lista, "Etiquetas", control, "Separadas por comas. Cada tanda usa una de ellas.")
     modo = Gtk.ComboBoxText()
     for ident, nombre in fondos.MODOS:
         modo.append(ident, _(nombre))
