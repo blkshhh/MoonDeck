@@ -97,6 +97,7 @@ try:
     from sensores import ES_WINDOWS, Sampler
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import relojes_arte
     import fuentes
     import tema as temas
     import idioma
@@ -671,21 +672,23 @@ class LienzoQt:
         self.p.drawPixmap(QRectF(dx, dy, dw, dh), self._hojas[clave], QRectF(sx, sy, sw, sh))
         self.p.restore()
 
-    def _fuente(self, px, peso):
-        clave = (round(px), peso)
+    def _fuente(self, px, peso, familia=None):
+        clave = (round(px), peso, familia)
         if clave not in self.fuentes:
             f = QFont(self.widget.font())
+            if familia:
+                f.setFamily(familia)
             f.setPixelSize(max(1, round(px)))
             f.setWeight(self.PESOS[peso])
             self.fuentes[clave] = (f, QFontMetricsF(f))
         return self.fuentes[clave]
 
-    def medir(self, texto, px, peso="normal"):
-        _f, fm = self._fuente(px, peso)
+    def medir(self, texto, px, peso="normal", familia=None):
+        _f, fm = self._fuente(px, peso, familia)
         return fm.horizontalAdvance(texto), fm.height()
 
-    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
-        f, fm = self._fuente(px, peso)
+    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5, familia=None):
+        f, fm = self._fuente(px, peso, familia)
         tw, th = fm.horizontalAdvance(texto), fm.height()
         self.p.setFont(f)
         self.p.setPen(color_qt(color))
@@ -1073,7 +1076,7 @@ class RelojVista(QWidget):
     def ajustar_minimo(self):
         o = self.opciones
         minimos = {"digital": 96, "analogico": 210, "minimal": 104,
-                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS}
+                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS, **relojes_arte.ALTOS}
         self._alto = minimos.get(o["estilo"], 96)
         self.setMinimumHeight(int(self._alto * 0.55))
         self.updateGeometry()
@@ -2970,7 +2973,7 @@ class VentanaConfig(QWidget):
         lista = self.grupo(caja, "Reloj")
         o = app.config["reloj"]
         tipo = QComboBox()
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             tipo.addItem(_(nombre), clave)
         tipo.setCurrentIndex(max(0, tipo.findData(o["estilo"])))
         tipo.currentIndexChanged.connect(lambda i: app.cambiar_reloj(estilo=tipo.itemData(i)))
@@ -4112,7 +4115,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def menu_reloj(self, menu):
         o = self.config["reloj"]
         tipos = menu.addMenu(_("Tipo de reloj"))
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
             a.setCheckable(True)
             a.setChecked(o["estilo"] == clave)

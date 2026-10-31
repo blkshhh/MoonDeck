@@ -9,6 +9,7 @@ Relojes, juegos, mascota y letra no dependen del arte: solo toman los colores de
 import math
 
 import esferas
+import relojes_arte
 import tema as temas
 import velocimetro as vm
 
@@ -58,6 +59,7 @@ class Arte:
     fuente = None       # su letra, si el usuario no ha elegido otra (ver fuentes.py)
     escala_letra = 1.0  # para las fuentes que se ven pequeñas a igual tamaño
     pixelar = 0         # si no es 0, relojes especiales e iconos se pintan a este tamaño de píxel
+    relojes = ()        # (clave, nombre) de sus relojes propios (ver relojes_arte.py)
 
     def forma(self, w, h):
         """El contorno de la tarjeta (puntos del polígono), o None si es un rectángulo."""
@@ -108,6 +110,9 @@ class ConEsferas(Arte):
         l.linea(cx + c * r0, cy + s * r0, cx + c * r1, cy + s * r1, grosor, color, False)
 
     def reloj(self, l, pal, w, h, texto, ahora, o, fecha):
+        if any(o["estilo"] == clave for clave, _nombre in self.relojes):
+            relojes_arte.DIBUJOS[o["estilo"]](l, pal, w, h, texto, ahora, o, fecha)
+            return True
         if o["estilo"] == "analogico":
             self._analogico(l, pal, w, h, ahora, o)
             return True
@@ -155,10 +160,11 @@ class PixelArt(ConEsferas):
     clave, nombre = "pixel", "Pixel art"
     dibuja = True
     radio_boton = 0
-    fuente = "Pixelify Sans"
-    escala_letra = 1.05
+    fuente = "Jersey 15"
+    escala_letra = 1.3
     PIXEL = 3    # lo que mide un "píxel" de las esquinas, el borde y las rayas
     pixelar = 2  # los relojes especiales y los iconos del tiempo
+    relojes = (("p_cifras", "Cifras gordas"), ("p_dia", "Día y noche"), ("p_consola", "Consola de bolsillo"))
     estilos = {
         "Game Boy": _estilo("pixel", "#9bbc0f", "#c4d86a", "#8bac0f", "#0f380f", "#8bac0f", "#0a2a0a", PIXEL),
         "8 bits": _estilo("pixel", "#ffcd75", "#f4f4f4", "#94b0c2", "#1a1c2c", "#f4f4f4", "#0d0e17", PIXEL),
@@ -232,6 +238,7 @@ class Terminal(ConEsferas):
     radio_boton = 0
     fuente = "VT323"
     escala_letra = 1.3
+    relojes = (("t_ascii", "Letras ASCII"), ("t_comandos", "Línea de comandos"), ("t_radar", "Radar"))
     estilos = {
         "Fósforo": _estilo("terminal", "#33ff66", "#7dffa0", "#2fae55", "#050d07", "#33ff66", "#000000"),
         "Ámbar": _estilo("terminal", "#ffb000", "#ffc94d", "#b37a00", "#0e0900", "#ffb000", "#000000"),
@@ -291,8 +298,9 @@ class Comic(ConEsferas):
     clave, nombre = "comic", "Cómic"
     dibuja = True
     radio_boton = 2
-    fuente = "Comic Neue"
-    escala_letra = 1.1
+    fuente = "Bangers"
+    escala_letra = 1.2
+    relojes = (("c_bocadillo", "Bocadillo"), ("c_explosion", "¡Explosión!"), ("c_vinetas", "Tres viñetas"))
     SOMBRA = 6
     TINTA = 3
     estilos = {

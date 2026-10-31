@@ -104,6 +104,7 @@ try:
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import relojes_arte
     import fuentes
     import tema as temas
     import idioma
@@ -293,9 +294,11 @@ def clases(widget, **activas):
 
 # --- texto en los dibujos (Pango) ---
 
-def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL):
+def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL, familia=None):
     lay = PangoCairo.create_layout(cr)
     fd = widget.get_pango_context().get_font_description().copy()
+    if familia:
+        fd.set_family(familia)
     fd.set_absolute_size(max(6, px * ESCALA) * Pango.SCALE)
     fd.set_weight(peso)
     lay.set_font_description(fd)
@@ -428,11 +431,11 @@ class LienzoCairo:
         cr.paint()
         cr.restore()
 
-    def medir(self, texto, px, peso="normal"):
-        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso]).get_pixel_size()
+    def medir(self, texto, px, peso="normal", familia=None):
+        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso], familia).get_pixel_size()
 
-    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
-        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso])
+    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5, familia=None):
+        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso], familia)
         lw, lh = lay.get_pixel_size()
         self._color(color)
         self.cr.move_to(x + (w - lw) * h_al, y + (h - lh) * v_al)
@@ -1216,7 +1219,7 @@ class RelojVista(Dibujo):
     def ajustar_minimo(self):
         o = self.opciones
         minimos = {"digital": 130, "analogico": 210, "minimal": 110,
-                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS}
+                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS, **relojes_arte.ALTOS}
         alto = minimos.get(o["estilo"], 96)
         self.poner_alto(int(alto * 0.55), alto)
         self.queue_draw()
@@ -2807,7 +2810,7 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Reloj")
         o = app.config["reloj"]
         tipo = Gtk.ComboBoxText()
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             tipo.append(clave, _(nombre))
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
@@ -3964,7 +3967,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def menu_reloj(self, menu):
         o = self.config["reloj"]
         tipos = self.submenu(menu, "Tipo de reloj")
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
