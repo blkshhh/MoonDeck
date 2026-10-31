@@ -166,8 +166,9 @@ def acento(alfa=255):
 
 
 def aplicar_colores(t):
-    global C_TEXTO, C_CLARO, C_NORMAL, C_GRIS_CLARO, C_TITULO, C_SEC, TENUE, SOMBRA, ESCALA
+    global C_TEXTO, C_CLARO, C_NORMAL, C_GRIS_CLARO, C_TITULO, C_SEC, TENUE, SOMBRA, ESCALA, ES_PIXEL
     g = t["global"]
+    ES_PIXEL = g["arte"] == "pixel"
     COLORES["azul"] = QColor(g["acento"])
     texto, sec = temas.hex_rgb(g["texto"]), temas.hex_rgb(g["texto_sec"])
     C_TEXTO, C_SEC = temas.a_hex(texto), temas.a_hex(sec)
@@ -182,6 +183,14 @@ def aplicar_colores(t):
 
 def tema_claro():
     return SOMBRA < 40  # texto oscuro: fondo claro
+
+
+def camino_pixel(x, y, w, h):
+    """La forma de una tarjeta en pixel art: esquinas en escalones."""
+    ruta = QPainterPath()
+    ruta.addPolygon(QPolygonF([QPointF(*q) for q in temas.contorno_pixel(x, y, w, h)]))
+    ruta.closeSubpath()
+    return ruta
 
 
 def pintar_fondo(p, perfil, rect, opacidad, prefijo="", solo_extras=False):
@@ -312,7 +321,8 @@ class Grafica(QWidget):
         w, h = self.width(), self.height()
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(0, 0, 0, SOMBRA))
-        p.drawRoundedRect(QRectF(0, 0, w, h), 6, 6)
+        radio = 0 if ES_PIXEL else 6
+        p.drawRoundedRect(QRectF(0, 0, w, h), radio, radio)
 
         p.setPen(QPen(tenue(18), 1))
         for i in range(1, 4):
@@ -323,6 +333,16 @@ class Grafica(QWidget):
         if tope is None:
             tope = max((max(d) for _, d in self.series), default=1.0)
             tope = max(tope * 1.15, 1.0)
+
+        if ES_PIXEL:
+            p.setPen(Qt.NoPen)
+            for color, datos in self.series:
+                c = QColor(color)
+                c.setAlpha(40)
+                for x, y in temas.columnas_grafica(datos, tope, w, h):
+                    p.fillRect(x, y, 4, h - y, c)
+                    p.fillRect(x, y, 4, 4, color)
+            return
 
         paso = w / (HISTORIAL - 1)
         for color, datos in self.series:
@@ -363,11 +383,15 @@ class Barra(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.setPen(Qt.NoPen)
+        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
+                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
+        if ES_PIXEL:
+            for x, largo, lleno in temas.tramos_barra(self.width(), self.valor / 100):
+                p.fillRect(x, 0, largo, self.alto, color if lleno else tenue(28))
+            return
         r = self.alto / 2
         p.setBrush(tenue(28))
         p.drawRoundedRect(QRectF(0, 0, self.width(), self.alto), r, r)
-        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
-                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
         p.setBrush(color)
         p.drawRoundedRect(QRectF(0, 0, self.width() * min(self.valor, 100) / 100, self.alto), r, r)
 
@@ -396,10 +420,16 @@ class BarrasNucleos(QWidget):
         h = self.height()
         for i, v in enumerate(self.valores):
             x = i * (bw + gap)
+            color = COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"]
+            frac = min(v / 100, 1.0)
+            if ES_PIXEL:
+                x, ancho = round(x), round(x + bw) - round(x)
+                for y, largo, lleno in temas.tramos_barra(h, frac, 4, 2):
+                    p.fillRect(x, h - y - largo, ancho, largo, color if lleno else tenue(22))
+                continue
             p.setBrush(tenue(22))
             p.drawRect(QRectF(x, 0, bw, h))
-            p.setBrush(COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"])
-            frac = min(v / 100, 1.0)
+            p.setBrush(color)
             p.drawRect(QRectF(x, h - frac * h, bw, frac * h))
 
 
@@ -1561,8 +1591,11 @@ class Tarjeta(QWidget):
         self.radio = perfil["radio"]
         m = NEON_MARGEN if perfil["neon"] else 0
         r = QRectF(self.rect()).adjusted(m + 0.5, m + 0.5, -m - 0.5, -m - 0.5)
-        ruta = QPainterPath()
-        ruta.addRoundedRect(r, self.radio, self.radio)
+        if ES_PIXEL:
+            ruta = camino_pixel(m, m, self.width() - 2 * m, self.height() - 2 * m)
+        else:
+            ruta = QPainterPath()
+            ruta.addRoundedRect(r, self.radio, self.radio)
         if self.sin_fondo():
             # Casi invisible, pero no del todo: en Windows los píxeles transparentes no reciben clics.
             p.fillPath(ruta, QColor(0, 0, 0, 1))
@@ -1577,7 +1610,7 @@ class Tarjeta(QWidget):
         con_acrilico = bool(self.ventana and self.ventana.acrilico_activo)
         escala = self.devicePixelRatioF()
         clave = (self.width(), self.height(), escala, repr(sorted(perfil.items())), self.opacidad, self.brillo,
-                 con_acrilico)
+                 con_acrilico, ES_PIXEL)
         if getattr(self, "_fondo_hecho", (None, None))[0] != clave:
             img = QPixmap(max(1, round(self.width() * escala)), max(1, round(self.height() * escala)))
             img.setDevicePixelRatio(escala)
@@ -1605,7 +1638,16 @@ class Tarjeta(QWidget):
         # En su propia ventana con acrílico, el color del fondo ya lo pone el cristal.
         pintar_fondo(p, perfil, r, self.opacidad, solo_extras=con_acrilico)
         p.restore()
-        if perfil["neon"]:
+        if ES_PIXEL:
+            if perfil["borde_grosor"] > 0:
+                b = temas.PIXEL
+                w, h = self.width(), self.height()
+                borde = QColor(perfil["borde"])
+                borde.setAlphaF(min(1.0, perfil["borde_opacidad"] * self.opacidad))
+                aro = camino_pixel(0, 0, w, h)
+                aro.addPath(camino_pixel(b, b, w - 2 * b, h - 2 * b))  # (el relleno salta el hueco de dentro)
+                p.fillPath(aro, borde)
+        elif perfil["neon"]:
             pintar_neon(p, perfil, r, self.radio, self.brillo * self.opacidad)
         elif perfil["borde_grosor"] > 0:
             borde = QColor(perfil["borde"])
@@ -2624,7 +2666,11 @@ class MuestraTema(QWidget):
         p.setBrush(QColor(t["global"]["texto_sec"]))
         p.drawRect(QRectF(20, 32, 60, 4))
         p.setBrush(QColor(t["global"]["acento"]))
-        p.drawRoundedRect(QRectF(20, 42, r.width() - 40, 5), 2.5, 2.5)
+        if t["global"]["arte"] == "pixel":
+            for x, largo, _lleno in temas.tramos_barra(round(r.width()) - 40, 1.0):
+                p.drawRect(QRectF(20 + x, 42, largo, 5))
+        else:
+            p.drawRoundedRect(QRectF(20, 42, r.width() - 40, 5), 2.5, 2.5)
 
 
 class VentanaConfig(QWidget):
@@ -2799,10 +2845,19 @@ class VentanaConfig(QWidget):
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, caja):
-        lista = self.grupo(caja, "Temas de serie", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
+        lista = self.grupo(caja, "Arte")
+        arte = QComboBox()
+        for clave, nombre in temas.TIPOS_ARTE:
+            arte.addItem(_(nombre), clave)
+        actual = self.app.tema["global"]["arte"]
+        arte.setCurrentIndex(arte.findData(actual))
+        arte.activated.connect(lambda _i: QTimer.singleShot(0, lambda: self.elegir_arte(arte.currentData())))
+        self.fila(lista, "Tipo de arte", arte, "Cómo se dibujan los widgets. Cada tipo de arte tiene sus propios estilos.")
+
+        lista = self.grupo(caja, "Estilos", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
         rejilla = QGridLayout()
         rejilla.setSpacing(8)
-        for i, (nombre, t) in enumerate(temas.PREDEFINIDOS.items()):
+        for i, (nombre, t) in enumerate(temas.estilos(actual).items()):
             b = QPushButton()
             b.setObjectName("tema")
             b.setCursor(Qt.PointingHandCursor)
@@ -2847,6 +2902,10 @@ class VentanaConfig(QWidget):
             b.clicked.connect(lambda _=False, fn=fn: fn())
             fila.addWidget(b)
         self.fila(lista, "Archivo de tema", fila)
+
+    def elegir_arte(self, arte):
+        if arte != self.app.tema["global"]["arte"]:
+            self.elegir_tema(next(iter(temas.estilos(arte).values())))
 
     def elegir_tema(self, t):
         nuevo = temas.completo(t)

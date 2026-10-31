@@ -155,8 +155,9 @@ ESCALA = 1.0    # tamaño de letra
 
 
 def aplicar_colores(t):
-    global BLANCO, GRIS, GRIS_CLARO, NORMAL, CLARO, TITULO, TENUE, SOMBRA, ESCALA
+    global BLANCO, GRIS, GRIS_CLARO, NORMAL, CLARO, TITULO, TENUE, SOMBRA, ESCALA, ES_PIXEL
     g = t["global"]
+    ES_PIXEL = g["arte"] == "pixel"
     COLORES["azul"] = hex_rgb(g["acento"])
     BLANCO, GRIS = hex_rgb(g["texto"]), hex_rgb(g["texto_sec"])
     CLARO = temas.mezcla(BLANCO, GRIS, 0.1)
@@ -487,6 +488,13 @@ def rect_redondeado(cr, x, y, w, h, r):
     cr.close_path()
 
 
+def poligono(cr, puntos):
+    cr.move_to(*puntos[0])
+    for p in puntos[1:]:
+        cr.line_to(*p)
+    cr.close_path()
+
+
 # ---------------------------------------------------------------------------
 # Widgets de dibujo
 # ---------------------------------------------------------------------------
@@ -508,7 +516,7 @@ class Grafica(Dibujo):
 
     def dibujar(self, _w, cr):
         w, h = self.get_allocated_width(), self.get_allocated_height()
-        rect_redondeado(cr, 0, 0, w, h, 6)
+        rect_redondeado(cr, 0, 0, w, h, 0 if ES_PIXEL else 6)
         cr.set_source_rgba(0, 0, 0, SOMBRA)
         cr.fill()
         cr.set_source_rgba(*TENUE, 0.07)
@@ -522,6 +530,18 @@ class Grafica(Dibujo):
         if tope is None:
             tope = max((max(d) for _, d in self.series), default=1.0)
             tope = max(tope * 1.15, 1.0)
+        if ES_PIXEL:
+            for (r, g, b), datos in self.series:
+                columnas = temas.columnas_grafica(datos, tope, w, h)
+                cr.set_source_rgba(r, g, b, 0.16)
+                for x, y in columnas:
+                    cr.rectangle(x, y, 4, h - y)
+                cr.fill()
+                cr.set_source_rgb(r, g, b)
+                for x, y in columnas:
+                    cr.rectangle(x, y, 4, 4)
+                cr.fill()
+            return
         paso = w / (HISTORIAL - 1)
         for (r, g, b), datos in self.series:
             puntos = [(i * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
@@ -558,12 +578,18 @@ class Barra(Dibujo):
 
     def dibujar(self, _w, cr):
         w = self.get_allocated_width()
+        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
+                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
+        if ES_PIXEL:
+            for x, largo, lleno in temas.tramos_barra(w, self.valor / 100):
+                cr.rectangle(x, 0, largo, self.alto)
+                cr.set_source_rgb(*color) if lleno else cr.set_source_rgba(*TENUE, 0.11)
+                cr.fill()
+            return
         r = self.alto / 2
         rect_redondeado(cr, 0, 0, w, self.alto, r)
         cr.set_source_rgba(*TENUE, 0.11)
         cr.fill()
-        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
-                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
         ancho = w * min(max(self.valor, 0), 100) / 100
         if ancho > 0.5:
             rect_redondeado(cr, 0, 0, max(ancho, self.alto), self.alto, r)
@@ -591,11 +617,19 @@ class BarrasNucleos(Dibujo):
         bw = (w - gap * (n - 1)) / n
         for i, v in enumerate(self.valores):
             x = i * (bw + gap)
+            color = COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"]
+            frac = min(v / 100, 1.0)
+            if ES_PIXEL:
+                x, ancho = round(x), round(x + bw) - round(x)
+                for y, largo, lleno in temas.tramos_barra(h, frac, 4, 2):
+                    cr.rectangle(x, h - y - largo, ancho, largo)
+                    cr.set_source_rgb(*color) if lleno else cr.set_source_rgba(*TENUE, 0.085)
+                    cr.fill()
+                continue
             cr.set_source_rgba(*TENUE, 0.085)
             cr.rectangle(x, 0, bw, h)
             cr.fill()
-            cr.set_source_rgb(*(COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"]))
-            frac = min(v / 100, 1.0)
+            cr.set_source_rgb(*color)
             cr.rectangle(x, h - frac * h, bw, frac * h)
             cr.fill()
 
@@ -1644,6 +1678,9 @@ class Tarjeta(Gtk.EventBox):
         x, y, cw, ch = m + 0.5, m + 0.5, w - 2 * m - 1, h - 2 * m - 1
         if self.sin_fondo():
             return False
+        if ES_PIXEL:
+            self.fondo_pixel(cr, p, w, h, m)
+            return False
         cr.save()
         rect_redondeado(cr, x, y, cw, ch, self.radio)
         cr.clip()
@@ -1661,6 +1698,27 @@ class Tarjeta(Gtk.EventBox):
         rect_redondeado(cr, x, y, cw, ch, self.radio)
         cr.clip()  # el contenido no se sale de la tarjeta redondeada
         return False
+
+    def fondo_pixel(self, cr, p, w, h, m):
+        """Pixel art: esquinas en escalones y borde de bloques, sin suavizar."""
+        fuera = temas.contorno_pixel(m, m, w - 2 * m, h - 2 * m)
+        cr.save()
+        poligono(cr, fuera)
+        cr.clip()
+        cr.translate(m, m)
+        pintar_fondo(cr, p, w - 2 * m, h - 2 * m, self.opacidad)
+        cr.restore()
+        if p["borde_grosor"] > 0:
+            b = temas.PIXEL
+            cr.save()
+            cr.set_fill_rule(cairo.FILL_RULE_EVEN_ODD)
+            poligono(cr, fuera)
+            poligono(cr, temas.contorno_pixel(m + b, m + b, w - 2 * m - 2 * b, h - 2 * m - 2 * b))
+            cr.set_source_rgba(*hex_rgb(p["borde"]), p["borde_opacidad"] * self.opacidad)
+            cr.fill()
+            cr.restore()
+        poligono(cr, fuera)
+        cr.clip()  # el contenido no se sale de la tarjeta
 
     def pintar_neon(self, cr, p, x, y, w, h):
         """Tubo de neón: halo suave (caída gaussiana, sin escalones) del color del
@@ -2597,12 +2655,21 @@ class VentanaConfig(Gtk.Window):
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, cont):
-        lista = self.grupo(cont, "Temas de serie", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
+        lista = self.grupo(cont, "Arte")
+        arte = Gtk.ComboBoxText()
+        for clave, nombre in temas.TIPOS_ARTE:
+            arte.append(clave, _(nombre))
+        actual = self.app.tema["global"]["arte"]
+        arte.set_active_id(actual)
+        arte.connect("changed", lambda c: GLib.idle_add(self.elegir_arte, c.get_active_id()))
+        self.fila(lista, "Tipo de arte", arte, "Cómo se dibujan los widgets. Cada tipo de arte tiene sus propios estilos.")
+
+        lista = self.grupo(cont, "Estilos", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
         flujo = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=4, row_spacing=10,
                             column_spacing=10, homogeneous=True)
         for lado in ("top", "bottom", "start", "end"):
             getattr(flujo, f"set_margin_{lado}")(12)
-        for nombre, t in temas.PREDEFINIDOS.items():
+        for nombre, t in temas.estilos(actual).items():
             b = Gtk.Button()
             b.set_relief(Gtk.ReliefStyle.NONE)
             caj = caja(True, 6)
@@ -2675,8 +2742,17 @@ class VentanaConfig(Gtk.Window):
         cr.rectangle(20, 32, 60, 4)
         cr.fill()
         cr.set_source_rgb(*hex_rgb(t["global"]["acento"]))
-        rect_redondeado(cr, 20, 42, ancho - 40, 5, 2.5)
+        if t["global"]["arte"] == "pixel":
+            for x, largo, _lleno in temas.tramos_barra(ancho - 40, 1.0):
+                cr.rectangle(20 + x, 42, largo, 5)
+        else:
+            rect_redondeado(cr, 20, 42, ancho - 40, 5, 2.5)
         cr.fill()
+
+    def elegir_arte(self, arte):
+        if arte != self.app.tema["global"]["arte"]:
+            self.elegir_tema(next(iter(temas.estilos(arte).values())))
+        return False
 
     def elegir_tema(self, t):
         nuevo = temas.completo(t)
