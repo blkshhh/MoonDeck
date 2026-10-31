@@ -104,6 +104,8 @@ try:
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import relojes_arte
+    import fuentes
     import tema as temas
     import idioma
     from idioma import _
@@ -167,10 +169,24 @@ def aplicar_colores(t):
     TITULO = temas.mezcla(BLANCO, GRIS, 0.7)
     TENUE = BLANCO  # líneas y fondos finos: el color del texto con poca opacidad
     SOMBRA = 0.22 if temas.luminancia(BLANCO) > 0.5 else 0.07
-    ESCALA = max(0.6, min(1.8, float(g["escala"])))
+    ESCALA = max(0.6, min(1.8, float(g["escala"]))) * ARTE.escala_letra
 
 
 aplicar_colores(temas.completo(None))
+
+
+def cargar_fuentes():
+    """Las fuentes de los artes, solo para esta app (no se instalan en el sistema)."""
+    try:
+        import ctypes
+        fc = ctypes.CDLL("libfontconfig.so.1")
+        for ruta in fuentes.extraer(CARPETA):
+            fc.FcConfigAppFontAddFile(None, ruta.encode())
+    except Exception as e:  # noqa: BLE001 - sin ellas, los artes usan la letra del sistema
+        log("Sin las fuentes de los artes:", e)
+
+
+cargar_fuentes()
 
 CONFIG = os.path.join(CARPETA, "config.json")
 
@@ -278,9 +294,11 @@ def clases(widget, **activas):
 
 # --- texto en los dibujos (Pango) ---
 
-def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL):
+def capa_texto(widget, cr, texto, px, peso=Pango.Weight.NORMAL, familia=None):
     lay = PangoCairo.create_layout(cr)
     fd = widget.get_pango_context().get_font_description().copy()
+    if familia:
+        fd.set_family(familia)
     fd.set_absolute_size(max(6, px * ESCALA) * Pango.SCALE)
     fd.set_weight(peso)
     lay.set_font_description(fd)
@@ -413,11 +431,11 @@ class LienzoCairo:
         cr.paint()
         cr.restore()
 
-    def medir(self, texto, px, peso="normal"):
-        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso]).get_pixel_size()
+    def medir(self, texto, px, peso="normal", familia=None):
+        return capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso], familia).get_pixel_size()
 
-    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5):
-        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso])
+    def texto(self, texto, x, y, w, h, px, color, peso="normal", h_al=0.5, v_al=0.5, familia=None):
+        lay = capa_texto(self.widget, self.cr, texto, px / ESCALA, self.PESOS[peso], familia)
         lw, lh = lay.get_pixel_size()
         self._color(color)
         self.cr.move_to(x + (w - lw) * h_al, y + (h - lh) * v_al)
@@ -487,6 +505,20 @@ def rect_redondeado(cr, x, y, w, h, r):
     cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
     cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
     cr.close_path()
+
+
+def pixelado(cr, w, h, factor, pintar):
+    """Dibuja en pequeño y amplía sin suavizar: `pintar(cr)` se ve a píxeles de `factor`."""
+    sup = cairo.ImageSurface(cairo.FORMAT_ARGB32, math.ceil(w / factor), math.ceil(h / factor))
+    c = cairo.Context(sup)
+    c.scale(1 / factor, 1 / factor)
+    pintar(c)
+    cr.save()
+    cr.scale(factor, factor)
+    cr.set_source_surface(sup)
+    cr.get_source().set_filter(cairo.FILTER_NEAREST)
+    cr.paint()
+    cr.restore()
 
 
 # ---------------------------------------------------------------------------
@@ -748,10 +780,14 @@ class BarraProgreso(Dibujo):
         activo = self.puede and (self.encima or self.arrastre is not None)
         grosor = 6 if activo else 4
         y = (h - grosor) / 2
+        frac = self.valor if self.arrastre is None else self.arrastre
+        if ARTE.dibuja:
+            cr.translate(0, round(y))
+            ARTE.barra(LienzoCairo(self, cr), w, grosor, frac, COLORES["verde"], paleta())
+            return
         rect_redondeado(cr, 0, y, w, grosor, grosor / 2)
         cr.set_source_rgba(*TENUE, 0.11)
         cr.fill()
-        frac = self.valor if self.arrastre is None else self.arrastre
         if frac * w > 0.5:
             rect_redondeado(cr, 0, y, max(frac * w, grosor), grosor, grosor / 2)
             cr.set_source_rgb(*COLORES["verde"])
@@ -937,7 +973,14 @@ def icono_pixbuf(widget, nombre, tam):
     return _iconos[clave]
 
 
-def pintar_icono(cr, widget, nombre, x, y, tam):
+def pintar_icono(cr, widget, nombre, x, y, tam, pixelar=True):
+    factor = min(ARTE.pixelar, tam // 13)
+    if pixelar and factor > 1:
+        cr.save()
+        cr.translate(x, y)
+        pixelado(cr, tam, tam, factor, lambda c: pintar_icono(c, widget, nombre, 0, 0, tam, False))
+        cr.restore()
+        return
     pb = icono_pixbuf(widget, nombre, tam)
     if pb:
         escala = pb.get_width() / tam
@@ -1176,7 +1219,7 @@ class RelojVista(Dibujo):
     def ajustar_minimo(self):
         o = self.opciones
         minimos = {"digital": 130, "analogico": 210, "minimal": 110,
-                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS}
+                   "mundial": 44 * max(1, len(o["zonas"])), **esferas.ALTOS, **relojes_arte.ALTOS}
         alto = minimos.get(o["estilo"], 96)
         self.poner_alto(int(alto * 0.55), alto)
         self.queue_draw()
@@ -1185,10 +1228,19 @@ class RelojVista(Dibujo):
         return t.strftime("%H:%M") if self.opciones["h24"] else t.strftime("%I:%M").lstrip("0")
 
     def dibujar(self, _w, cr):
+        if ARTE.pixelar and self.opciones["estilo"] in esferas.ALTOS:
+            pixelado(cr, self.get_allocated_width(), self.get_allocated_height(), ARTE.pixelar, self.pintar)
+        else:
+            self.pintar(cr)
+
+    def pintar(self, cr):
         ahora = datetime.datetime.now()
         if self.opciones["estilo"] in esferas.ALTOS:
             esferas.reloj(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height(),
                           ahora, self.opciones, fecha_larga(ahora.date()), self.opciones["estilo"])
+            return
+        if ARTE.reloj(LienzoCairo(self, cr), paleta(), self.get_allocated_width(), self.get_allocated_height(),
+                      self.hora(ahora), ahora, self.opciones, fecha_larga(ahora.date())):
             return
         {"analogico": self.analogico, "minimal": self.minimal,
          "mundial": self.mundial}.get(self.opciones["estilo"], self.digital)(cr, ahora)
@@ -1364,9 +1416,7 @@ class CalendarioMes(Dibujo):
             for c, dia in enumerate(semana):
                 x, y = c * cw, f * ch
                 if dia == hoy:
-                    cr.set_source_rgb(*COLORES["azul"])
-                    cr.arc(x + cw / 2, y + ch / 2, min(cw, ch) * 0.44, 0, 2 * math.pi)
-                    cr.fill()
+                    ARTE.hoy(LienzoCairo(self, cr), x + cw / 2, y + ch / 2, min(cw, ch) * 0.44, COLORES["azul"])
                     color, peso = (1, 1, 1), Pango.Weight.BOLD
                 else:
                     color = CLARO if dia.weekday() < 5 else hex_rgb("c4561a" if tema_claro() else "ffb877")
@@ -1466,8 +1516,12 @@ def css_tema(t):
     fondo = hex_rgb(t["widgets"]["fondo"])
     css = css.replace("rgba(22, 24, 30, 0.92)", rgba(fondo, 0.94))
     css = re.sub(r"([\d.]+)pt", lambda m: f"{float(m.group(1)) * ESCALA:.1f}pt", css)
-    if g["fuente"]:
-        css = f'.hw {{ font-family: "{g["fuente"]}"; }}\n' + css
+    fuente = g["fuente"] or ARTE.fuente
+    if fuente:
+        css = f'.hw {{ font-family: "{fuente}"; }}\n' + css
+    if ARTE.radio_boton is not None:
+        css += (".hw button.normal, .hw button.principal, .hw button.plano, .hw button.dispositivo, .hw scale trough, "
+                f".hw scale highlight, .hw scale slider {{ border-radius: {ARTE.radio_boton}px; }}\n")
     return css
 
 
@@ -2756,7 +2810,7 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Reloj")
         o = app.config["reloj"]
         tipo = Gtk.ComboBoxText()
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             tipo.append(clave, _(nombre))
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
@@ -3913,7 +3967,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
     def menu_reloj(self, menu):
         o = self.config["reloj"]
         tipos = self.submenu(menu, "Tipo de reloj")
-        for clave, nombre in ESTILOS_RELOJ:
+        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
             self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
         for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
             self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
@@ -4016,10 +4070,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.tema = temas.completo(self.config.get("tema"))
         aplicar_colores(self.tema)
         if PROVEEDOR:
-            css = css_tema(self.tema)
-            if ARTE.radio_boton is not None:
-                css += f".hw button {{ border-radius: {ARTE.radio_boton}px; }}"
-            PROVEEDOR.load_from_data(css.encode())
+            PROVEEDOR.load_from_data(css_tema(self.tema).encode())
         for t in getattr(self, "tarjetas", []):
             if t._margen != t.margen_neon():  # se ha activado o quitado el neón
                 t.ajustar_margenes()

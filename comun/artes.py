@@ -6,7 +6,12 @@ Un estilo es un tema normal (tema.py) con "arte" en su parte global. Cristal no 
 Relojes, juegos, mascota y letra no dependen del arte: solo toman los colores del estilo.
 """
 
+import math
+
+import esferas
+import relojes_arte
 import tema as temas
+import velocimetro as vm
 
 
 def _alfa(color, alfa):
@@ -50,7 +55,11 @@ class Arte:
     clave, nombre = "cristal", "Cristal"
     estilos = temas.PREDEFINIDOS
     dibuja = False
-    radio_boton = None  # esquinas de los botones (None = las de siempre)
+    radio_boton = None  # esquinas de los botones y deslizadores (None = las de siempre)
+    fuente = None       # su letra, si el usuario no ha elegido otra (ver fuentes.py)
+    escala_letra = 1.0  # para las fuentes que se ven pequeñas a igual tamaño
+    pixelar = 0         # si no es 0, relojes especiales e iconos se pintan a este tamaño de píxel
+    relojes = ()        # (clave, nombre) de sus relojes propios (ver relojes_arte.py)
 
     def forma(self, w, h):
         """El contorno de la tarjeta (puntos del polígono), o None si es un rectángulo."""
@@ -68,6 +77,18 @@ class Arte:
     def grafica(self, l, series, tope, w, h, pal):
         """series: [(color, datos)]; tope: el valor de arriba del todo."""
 
+    def hoy(self, l, cx, cy, r, color):
+        """La marca del día de hoy en el calendario."""
+        l.circulo(cx, cy, r, color)
+
+    def reloj(self, l, pal, w, h, texto, ahora, o, fecha):
+        """El reloj digital, minimal o analógico. False si lo dibuja el reloj de siempre."""
+        return False
+
+    def velocimetro(self, l, pal, w, h, e):
+        """El velocímetro (e: ver esferas.velocimetro). False si lo dibuja el de siempre."""
+        return False
+
     def muestra(self, l, t, w, h):
         """La miniatura de un estilo en Configuración: tarjeta, dos textos y una barra."""
         g = t["global"]
@@ -78,19 +99,96 @@ class Arte:
         l.rect(12, 23, 60, 4, 0, pal["gris"])
 
 
-class PixelArt(Arte):
+class ConEsferas(Arte):
+    """Los artes con reloj y velocímetro propios: solo dicen cómo es una raya y una cifra."""
+
+    def cifra(self, l, texto, x, y, w, h, px, pal):
+        l.texto(texto, x, y, w, h, px, pal["texto"], "negrita")
+
+    def raya(self, l, cx, cy, r0, r1, angulo, grosor, color):
+        c, s = math.cos(angulo), math.sin(angulo)
+        l.linea(cx + c * r0, cy + s * r0, cx + c * r1, cy + s * r1, grosor, color, False)
+
+    def reloj(self, l, pal, w, h, texto, ahora, o, fecha):
+        if any(o["estilo"] == clave for clave, _nombre in self.relojes):
+            relojes_arte.DIBUJOS[o["estilo"]](l, pal, w, h, texto, ahora, o, fecha)
+            return True
+        if o["estilo"] == "analogico":
+            self._analogico(l, pal, w, h, ahora, o)
+            return True
+        if o["estilo"] not in ("digital", "minimal"):
+            return False
+        alto = esferas._alto_fecha(o, h, 90, min(30, h * 0.2)) if o["estilo"] == "digital" else 0
+        if o["segundos"] and o["estilo"] == "digital":
+            texto += f":{ahora.second:02d}"
+        px = esferas.px_que_quepa(l, texto, w * 0.94, (h - 2 * alto) * 0.8, "negrita")
+        self.cifra(l, texto, 0, alto, w, h - 2 * alto, px, pal)
+        esferas._pie(l, pal, w, h, alto, fecha, ahora, o)
+        return True
+
+    def _analogico(self, l, pal, w, h, ahora, o):
+        cx, cy, r = w / 2, h / 2, min(w, h) / 2 - 6
+        for i in range(12):
+            a = i * math.pi / 6
+            fuerte = i % 3 == 0
+            self.raya(l, cx, cy, r * (0.8 if fuerte else 0.9), r, a, 4 if fuerte else 2,
+                      pal["texto"] if fuerte else pal["gris"])
+        minuto = ahora.minute + ahora.second / 60
+        self.raya(l, cx, cy, 0, r * 0.5, ((ahora.hour % 12) + minuto / 60) * math.pi / 6 - math.pi / 2, 5, pal["texto"])
+        self.raya(l, cx, cy, 0, r * 0.75, minuto * math.pi / 30 - math.pi / 2, 3, pal["texto"])
+        if o["segundos"]:
+            self.raya(l, cx, cy, -r * 0.1, r * 0.85, ahora.second * math.pi / 30 - math.pi / 2, 1.5, pal["azul"])
+
+    def velocimetro(self, l, pal, w, h, e):
+        cx, cy, r = vm.geometria(w, h)
+        frac = vm.fraccion(e["valor"], e["tope"])
+        color = pal.get(e["color"], pal["azul"])
+        n = vm.SEGMENTOS
+        for i in range(n):
+            lleno = (i + 0.5) / n <= frac
+            self.raya(l, cx, cy, r * 0.82, r - 2, vm.angulo((i + 0.5) / n), 3,
+                      color if lleno else _alfa(pal["tenue"], 0.14))
+        r_txt = r * 0.82 - max(9, r * 0.1)
+        esferas._marcas(l, pal, cx, cy, r_txt, r, e["tope"])
+        esferas._cifras(l, pal, cx, cy, r, r_txt * 1.25 if r >= 70 else r * 0.9, e, color)
+        return True
+
+
+class PixelArt(ConEsferas):
     """Bloques: esquinas en escalones y barras y gráficas a saltos."""
 
     clave, nombre = "pixel", "Pixel art"
     dibuja = True
     radio_boton = 0
-    PIXEL = 3  # lo que mide un "píxel" de las esquinas y el borde
+    fuente = "Jersey 15"
+    escala_letra = 1.3
+    PIXEL = 3    # lo que mide un "píxel" de las esquinas, el borde y las rayas
+    pixelar = 2  # los relojes especiales y los iconos del tiempo
+    relojes = (("p_cifras", "Cifras gordas"), ("p_dia", "Día y noche"), ("p_consola", "Consola de bolsillo"))
     estilos = {
         "Game Boy": _estilo("pixel", "#9bbc0f", "#c4d86a", "#8bac0f", "#0f380f", "#8bac0f", "#0a2a0a", PIXEL),
         "8 bits": _estilo("pixel", "#ffcd75", "#f4f4f4", "#94b0c2", "#1a1c2c", "#f4f4f4", "#0d0e17", PIXEL),
         "Arcade": _estilo("pixel", "#ff2e88", "#f5f0ff", "#9d8bd1", "#140c2a", "#29e7ff", "#07040f", PIXEL),
         "Mazmorra": _estilo("pixel", "#e09f3e", "#f1e3c6", "#a8917a", "#2b2119", "#7a5c3e", "#120d09", PIXEL),
     }
+
+    def raya(self, l, cx, cy, r0, r1, angulo, grosor, color):
+        b = self.PIXEL
+        c, s = math.cos(angulo), math.sin(angulo)
+        lado = b * max(1, round(grosor / b))
+        n = max(1, round(abs(r1 - r0) / b))
+        bloques = {(round((cx + c * (r0 + (r1 - r0) * i / n)) / b) * b, round((cy + s * (r0 + (r1 - r0) * i / n)) / b) * b)
+                   for i in range(n + 1)}
+        for x, y in bloques:
+            l.rect(x, y, lado, lado, 0, color)
+
+    def hoy(self, l, cx, cy, r, color):
+        b = round(r / 4) or 1
+        r = round(r / b) * b
+        cx, cy = round(cx), round(cy)
+        l.rect(cx - r + b, cy - r, 2 * (r - b), 2 * r, 0, color)  # una cruz gorda: un círculo a bloques
+        l.rect(cx - r, cy - r + b, b, 2 * (r - b), 0, color)
+        l.rect(cx + r - b, cy - r + b, b, 2 * (r - b), 0, color)
 
     def forma(self, w, h):
         d, e = self.PIXEL, 2 * self.PIXEL
@@ -132,17 +230,28 @@ class PixelArt(Arte):
             l.rect(12 + x, 33, largo, 5, 0, temas.hex_rgb(t["global"]["acento"]))
 
 
-class Terminal(Arte):
+class Terminal(ConEsferas):
     """Un monitor de fósforo: líneas de barrido, marco doble y gráficas de puntos que brillan."""
 
     clave, nombre = "terminal", "Terminal"
     dibuja = True
     radio_boton = 0
+    fuente = "VT323"
+    escala_letra = 1.3
+    relojes = (("t_ascii", "Letras ASCII"), ("t_comandos", "Línea de comandos"), ("t_radar", "Radar"))
     estilos = {
         "Fósforo": _estilo("terminal", "#33ff66", "#7dffa0", "#2fae55", "#050d07", "#33ff66", "#000000"),
         "Ámbar": _estilo("terminal", "#ffb000", "#ffc94d", "#b37a00", "#0e0900", "#ffb000", "#000000"),
         "Hielo": _estilo("terminal", "#66d9ff", "#b4ecff", "#4a93ad", "#03090d", "#66d9ff", "#000000"),
     }
+
+    def cifra(self, l, texto, x, y, w, h, px, pal):
+        for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):  # el brillo del fósforo
+            l.texto(texto, x + dx, y + dy, w, h, px, _alfa(pal["azul"], 0.18), "negrita")
+        super().cifra(l, texto, x, y, w, h, px, pal)
+
+    def hoy(self, l, cx, cy, r, color):
+        l.rect(round(cx - r), round(cy - r * 0.8), round(2 * r), round(1.6 * r), 0, color)
 
     def tarjeta(self, l, p, w, h, opacidad, pal):
         l.rect(0, 0, w, h, 0, _alfa(temas.hex_rgb(p["fondo"]), p["opacidad"] * opacidad))
@@ -183,12 +292,15 @@ class Terminal(Arte):
             l.rect(12 + x, 33, largo, 5, 0, temas.hex_rgb(t["global"]["acento"]))
 
 
-class Comic(Arte):
+class Comic(ConEsferas):
     """Viñetas: tinta gruesa, sombra dura, formas algo torcidas y trama de puntos."""
 
     clave, nombre = "comic", "Cómic"
     dibuja = True
     radio_boton = 2
+    fuente = "Bangers"
+    escala_letra = 1.2
+    relojes = (("c_bocadillo", "Bocadillo"), ("c_explosion", "¡Explosión!"), ("c_vinetas", "Tres viñetas"))
     SOMBRA = 6
     TINTA = 3
     estilos = {
@@ -201,6 +313,20 @@ class Comic(Arte):
     def _papel(tinta):
         """Lo de dentro de barras y gráficas: más claro que el papel, o más oscuro en los estilos oscuros."""
         return (1, 1, 1, 0.6) if sum(tinta[:3]) < 1.5 else (0, 0, 0, 0.6)
+
+    def cifra(self, l, texto, x, y, w, h, px, pal):
+        l.texto(texto, x + 3, y + 3, w, h, px, pal["azul"], "negrita")
+        super().cifra(l, texto, x, y, w, h, px, pal)
+
+    def raya(self, l, cx, cy, r0, r1, angulo, grosor, color):
+        c, s = math.cos(angulo), math.sin(angulo)
+        l.linea(cx + c * r0, cy + s * r0, cx + c * r1, cy + s * r1, grosor + 1.5, color, True)
+
+    def hoy(self, l, cx, cy, r, color):
+        # Una estrella de onomatopeya
+        puntos = [(cx + math.cos(i * math.pi / 8) * r * (1.25 if i % 2 else 0.9),
+                   cy + math.sin(i * math.pi / 8) * r * (1.25 if i % 2 else 0.9)) for i in range(16)]
+        l.poligono(puntos, color)
 
     def forma(self, w, h):
         w, h = w - self.SOMBRA, h - self.SOMBRA
