@@ -78,7 +78,7 @@ log("Iniciando. Python", sys.version.split()[0], "en", sys.platform, "| admin:",
     bool(ctypes.windll.shell32.IsUserAnAdmin()) if sys.platform == "win32" else os.geteuid() == 0)
 
 try:
-    from PySide6.QtCore import (QEasingCurve, QEvent, QFileInfo, QObject, QPointF, QRectF, QSize, Qt, QTimer, QUrl,
+    from PySide6.QtCore import (QEasingCurve, QEvent, QFileInfo, QObject, QPoint, QPointF, QRectF, QSize, Qt, QTimer, QUrl,
                                 QVariantAnimation, Signal)
     from PySide6.QtGui import (QBrush, QColor, QDesktopServices, QFont, QFontDatabase, QFontMetricsF,
                                QGuiApplication, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap,
@@ -97,6 +97,7 @@ try:
     from sensores import ES_WINDOWS, Sampler
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import escena_tiempo
     import relojes_arte
     import fuentes
     import tema as temas
@@ -116,6 +117,7 @@ EFECTO = "acrilico"   # "acrilico" (cristal de Windows 11) o "ninguno" (fondo os
 INTERVALO = 1.0       # segundos entre lecturas
 HISTORIAL = 120       # muestras en las gráficas
 FOTOGRAMA_GRAFICA = 50  # ms entre dibujos de una gráfica mientras se desliza
+ESCENA_POR_DEFECTO = {"activa": True, "guardian": escena_tiempo.GUARDIAN_POR_DEFECTO, "fps": escena_tiempo.FPS_MIN}
 ANCHO = 340           # ancho de cada widget
 SEPARACION = 14       # espacio entre widgets al colocarlos
 COLUMNAS = 4
@@ -654,6 +656,13 @@ class LienzoQt:
         self.p.setPen(Qt.NoPen)
         self.p.setBrush(color_qt(color))
         self.p.drawPolygon(QPolygonF([QPointF(x, y) for x, y in puntos]))
+
+    def contorno(self, puntos, grosor, color, cerrado=True):
+        """Traza una línea por los puntos, de una vez."""
+        self.p.setBrush(Qt.NoBrush)
+        self.p.setPen(QPen(color_qt(color), grosor, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        figura = QPolygonF([QPointF(x, y) for x, y in puntos])
+        (self.p.drawPolygon if cerrado else self.p.drawPolyline)(figura)
 
     def recortar(self, x, y, w, h, radio):
         """Lo que se dibuje hasta sin_recorte() no sale de este rectángulo redondeado."""
@@ -1488,6 +1497,7 @@ class Tarjeta(QWidget):
         self._siguiente = time.monotonic() + random.uniform(1, 8)
         self.setMouseTracking(True)
         self.setStyleSheet(css_tema(app.tema))
+        self.pinta_escena = None  # si hay algo animado detrás del contenido (arte Cómic)
 
         # Todo el contenido va en un contenedor para poder atenuarlo junto.
         exterior = QVBoxLayout(self)
@@ -1681,6 +1691,8 @@ class Tarjeta(QWidget):
             q.end()
             self._fondo_hecho = (clave, img)
         p.drawPixmap(0, 0, self._fondo_hecho[1])
+        if self.pinta_escena:
+            self.pinta_escena(LienzoQt(self, p), self, self.width() - 2 * m, self.height() - 2 * m)
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         if self.en_edicion():
             p.setBrush(Qt.NoBrush)
@@ -2485,6 +2497,31 @@ class IconoTiempo(QWidget):
             pintar_icono_tiempo(QPainter(self), self.nombre, 0, 0, self.tam)
 
 
+# Además de las de MedidorFPS.ESCRITORIO: también pintan fotogramas y no son juegos
+NO_JUEGOS = {"python.exe", "pythonw.exe", "moondeck.exe", "claude.exe", "steelseriesgg.exe", "radeonsoftware.exe",
+             "amdrsserv.exe", "nvidia overlay.exe", "wallpaper32.exe", "wallpaper64.exe", "lively.exe"}
+
+
+def jugando(fps):
+    """¿Hay un juego delante? Lo que presenta fotogramas tiene que ser la ventana que tienes
+    delante: si no, cualquier app animada de fondo (la de Claude, el software de la gráfica...)
+    contaba como un juego y la mascota sacaba el mando con Spotify abierto."""
+    if not fps:
+        return False
+    app = fps["app"].lower()
+    from sensores import MedidorFPS
+    if app in MedidorFPS.ESCRITORIO or app in NO_JUEGOS:
+        return False
+    try:
+        import psutil
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        pid = ctypes.c_ulong()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        return psutil.Process(pid.value).name().lower() == app
+    except Exception:  # noqa: BLE001 - el proceso se ha cerrado justo ahora
+        return False
+
+
 class CabeceraTiempo(QWidget):
     """Icono grande + grados; en una celda estrecha del panel se queda sin icono."""
 
@@ -2492,6 +2529,51 @@ class CabeceraTiempo(QWidget):
         super().resizeEvent(e)
         if hasattr(self, "icono"):
             self.icono.setVisible(self.width() >= 220 and bool(self.icono.nombre))
+
+
+class HuecoEscena(QWidget):
+    """El sitio donde se ve la escena del arte Cómic."""
+
+    ESTIRA = True
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumHeight(120)
+
+
+class PronosticoTira(QWidget):
+    """Los próximos días en columnas: deja sitio a la escena del arte Cómic."""
+
+    COLUMNA = 46
+
+    def __init__(self):
+        super().__init__()
+        self.dias = []
+        self.setFixedHeight(62)
+
+    def poner(self, dias):
+        self.dias = dias
+        self.update()
+
+    def paintEvent(self, _e):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        n = max(1, min(len(self.dias), self.width() // self.COLUMNA))
+        ancho = self.width() / n
+        hoy = datetime.date.today()
+        negrita, normal = QFont(self.font()), QFont(self.font())
+        negrita.setPixelSize(round(11.5 * ESCALA))
+        negrita.setBold(True)
+        normal.setPixelSize(round(11 * ESCALA))
+        for i, d in enumerate(self.dias[:n]):
+            x, fecha = i * ancho, datetime.date.fromisoformat(d["fecha"])
+            p.setFont(negrita)
+            p.setPen(QColor(C_SEC))
+            p.drawText(QRectF(x, 0, ancho, 15), Qt.AlignCenter, _("Hoy") if fecha == hoy else idioma.dia_corto(fecha.weekday()))
+            pintar_icono_tiempo(p, describir(d["codigo"])[1], x + (ancho - 24) / 2, 16, 24)
+            p.setFont(normal)
+            p.setPen(QColor(C_TEXTO))
+            p.drawText(QRectF(x, 43, ancho, 16), Qt.AlignCenter, f"{d['max']:.0f}° / {d['min']:.0f}°")
 
 
 class PronosticoHoras(QWidget):
@@ -3002,6 +3084,24 @@ class VentanaConfig(QWidget):
         fila.addWidget(lugar)
         fila.addWidget(cambiar)
         self.fila(lista, "Ciudad", fila, "Busca tu ciudad para ver su tiempo")
+        if ARTE.clave == "comic":
+            o = app.opciones_escena()
+            activa = QCheckBox()
+            activa.setChecked(o["activa"])
+            activa.toggled.connect(lambda si: app.cambiar_escena(activa=si))
+            self.fila(lista, "Fondo animado", activa, "La escena cambia con el tiempo que hace")
+            guardian = QComboBox()
+            for clave, nombre in escena_tiempo.GUARDIANES:
+                guardian.addItem(_(nombre), clave)
+            guardian.setCurrentIndex(max(0, guardian.findData(o["guardian"])))
+            guardian.currentIndexChanged.connect(lambda _i: app.cambiar_escena(guardian=guardian.currentData()))
+            self.fila(lista, "Guardián", guardian)
+            fps = QSpinBox()
+            fps.setRange(escena_tiempo.FPS_MIN, escena_tiempo.FPS_MAX)
+            fps.setSingleStep(5)
+            fps.setValue(o["fps"])
+            fps.valueChanged.connect(lambda v: app.cambiar_escena(fps=v))
+            self.fila(lista, "Imágenes por segundo", fps, "Más imágenes se ven más suaves, pero gastan más")
 
         lista = self.grupo(caja, "Calendario")
         semana = QComboBox()
@@ -3607,13 +3707,20 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         textos.addWidget(t["desc"])
         fila.addLayout(textos, 1)
         c.add(arriba)
+        t["tarjeta"], t["arriba"], t["escena"] = c, arriba, escena_tiempo.Escena()
+        t["hueco"] = c.add(HuecoEscena())
         t["detalle"] = c.add(etiqueta("", "dim"), prescindible=3)
         t["detalle"].setWordWrap(True)
         t["horas"] = c.add(PronosticoHoras(), prescindible=2)
         t["dias"] = c.add(PronosticoDias())
+        t["tira"] = c.add(PronosticoTira())
         c._estira = True  # los días absorben el alto sobrante
         t["ciudad"] = c.add(etiqueta("", "dim"), prescindible=1)
         self.tm = t
+        self.en_juego = False
+        self.reloj_escena = QTimer()
+        self.reloj_escena.timeout.connect(self.tic_escena)
+        self.ajustar_escena()
 
         # Dispositivos de audio (solo Windows)
         self.audio = None
@@ -4056,6 +4163,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.cpu_temp.setText(f'<span style="color:{color_temp(t)}">' + _("Temperatura {t}").format(t=temp) + "</span>")
         self.cpu_graf.push(s["cpu"], t)
         self.cpu_nucleos.set(s["cores"])
+        if self.escena_activa():
+            self.en_juego = jugando(s.get("fps"))
         up = int(s["uptime"])
         self.uptime.setText(_("{n} hilos · Encendido {tiempo}").format(
             n=len(s["cores"]), tiempo=f"{up // 86400}d {up % 86400 // 3600}h {up % 3600 // 60}m"))
@@ -4400,6 +4509,67 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.teclado.configurar(self.config.get("teclado_programa"), self.config.get("teclado_esconder", True))
         self.actualizar_audio()
 
+    # --- fondo animado del tiempo (arte Cómic) ------------------------------------
+
+    def opciones_escena(self):
+        return dict(ESCENA_POR_DEFECTO, **self.config.get("escena_tiempo", {}))
+
+    def escena_activa(self):
+        return ARTE.clave == "comic" and self.opciones_escena()["activa"]
+
+    def escena_datos(self):
+        """Le dice a la escena el tiempo que hace y el guardián elegido."""
+        d, guardian = self.tiempo.datos, self.opciones_escena()["guardian"]
+        if d:
+            momento = escena_tiempo.momento_de(d["dia"], d.get("hora"), d["puesta"])
+            self.tm["escena"].poner(escena_tiempo.clima_de(d["codigo"]), momento, guardian)
+        else:
+            self.tm["escena"].poner("nubes", "dia", guardian)
+
+    def cambiar_escena(self, **cambios):
+        self.config.setdefault("escena_tiempo", {}).update(cambios)
+        self.guardar_config()
+        self.escena_datos()
+        self.ajustar_escena()
+
+    def ajustar_escena(self):
+        t, activa = self.tm, self.escena_activa()
+        for w in (t["hueco"], t["tira"]):
+            poner_visible(w, activa)
+        for w in (t["horas"], t["dias"]):
+            poner_visible(w, not activa)
+        t["tarjeta"].pinta_escena = self.pintar_escena if activa else None
+        t["tarjeta"].update()
+        self.reloj_escena.stop()
+        if activa:
+            self.reloj_escena.start(round(1000 / self.opciones_escena()["fps"]))
+
+    def tic_escena(self):
+        if self.tm["tarjeta"].isVisible() and not self.en_juego:
+            self.tm["tarjeta"].update()
+
+    def pintar_escena(self, l, tarjeta, w, h):
+        t = self.tm
+
+        def rect(widget):
+            q = widget.mapTo(tarjeta, QPoint(0, 0))
+            return q.x(), q.y(), widget.width(), widget.height()
+
+        ax, ay, aw, ah = rect(t["arriba"])
+        arriba = rect(tarjeta.lb_titulo)[1] if tarjeta.lb_titulo.isVisible() else ay
+        ancho = min(aw, t["arriba"].sizeHint().width())
+        abajo = [rect(x) for x in (t["detalle"], t["tira"], t["ciudad"]) if x.isVisible()]
+        if not abajo:
+            return
+        y0, y1 = min(r[1] for r in abajo) - 5, max(r[1] + r[3] for r in abajo) + 5
+        cartelas = ((ax - 6, arriba - 4, ancho + 12, ay + ah - arriba + 8), (ax - 6, y0, aw + 12, y1 - y0))
+        perfil = tarjeta.perfil()
+        fps = self.opciones_escena()["fps"]
+        s = ARTE.SOMBRA
+        t["escena"].pintar(l, 5, 5, w - s - 10, h - s - 10, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
+                           temas.hex_rgb(perfil["fondo"]), temas.hex_rgb(perfil["borde"]),
+                           self.tema["global"]["fuente"] or ARTE.fuente)
+
     def cambiar_intervalo(self, valor):
         global INTERVALO
         INTERVALO = float(valor)
@@ -4445,6 +4615,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 s=f"{d['sensacion']:.0f}", h=f"{d['humedad']:.0f}", v=f"{d['viento']:.0f}", a=d["salida"], b=d["puesta"]))
             t["horas"].poner(d["horas"])
             t["dias"].poner(d["dias"])
+            t["tira"].poner(d["dias"])
+            self.escena_datos()
         else:
             t["temp"].setText("—")
             t["desc"].setText(_("Cargando…") if not self.tiempo.error else "")

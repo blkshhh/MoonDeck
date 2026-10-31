@@ -104,6 +104,7 @@ try:
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
     import artes
+    import escena_tiempo
     import relojes_arte
     import fuentes
     import tema as temas
@@ -126,6 +127,7 @@ EFECTO = "cristal"     # "cristal" (desenfoque de COSMIC) o "ninguno" (fondo osc
 INTERVALO = 1.0        # segundos entre lecturas
 HISTORIAL = 120        # muestras en las gráficas
 FOTOGRAMA_GRAFICA = 50 # ms entre dibujos de una gráfica mientras se desliza
+ESCENA_POR_DEFECTO = {"activa": True, "guardian": escena_tiempo.GUARDIAN_POR_DEFECTO, "fps": escena_tiempo.FPS_MIN}
 ANCHO = 340            # ancho de cada widget
 SEPARACION = 14        # espacio entre widgets al colocarlos
 COLUMNAS = 4
@@ -389,6 +391,40 @@ class LienzoCairo:
         self._color(color)
         cr.fill()
 
+    def contorno(self, puntos, grosor, color, cerrado=True):
+        """Traza una línea por los puntos, de una vez."""
+        cr = self.cr
+        cr.new_path()
+        cr.move_to(*puntos[0])
+        for x, y in puntos[1:]:
+            cr.line_to(x, y)
+        if cerrado:
+            cr.close_path()
+        cr.set_line_width(grosor)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        self._color(color)
+        cr.stroke()
+
+    _capas = {}
+
+    def capa(self, clave, x, y, w, h, dibujar):
+        """Un dibujo de w x h que se repite igual muchas veces: dibujar(lienzo) se hace una sola
+        vez en una imagen y luego solo se pega en (x, y)."""
+        escala = self.widget.get_scale_factor()
+        clave = (clave, round(w), round(h), escala)
+        img = self._capas.get(clave)
+        if img is None:
+            if len(self._capas) > 120:
+                self._capas.clear()
+            img = cairo.ImageSurface(cairo.FORMAT_ARGB32, max(1, round(w * escala)), max(1, round(h * escala)))
+            img.set_device_scale(escala, escala)
+            dibujar(LienzoCairo(self.widget, cairo.Context(img)))
+            img.flush()
+            self._capas[clave] = img
+        self.cr.set_source_surface(img, round(x), round(y))
+        self.cr.paint()
+
     def recortar(self, x, y, w, h, radio):
         """Lo que se dibuje hasta sin_recorte() no sale de este rectángulo redondeado."""
         self.cr.save()
@@ -451,6 +487,26 @@ def paleta():
 # Las áreas de dibujo tienen su propia ventana de GDK: sin estos eventos, los clics
 # sobre ellas no llegarían a la tarjeta (menú, arrastrar).
 EVENTOS = Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.POINTER_MOTION_MASK
+
+
+# En la línea de órdenes de un juego: el "reaper" de Steam vive lo que dura el juego,
+# y lo de steamapps/common (el juego, Proton) solo corre con uno abierto
+SENALES_JUEGO = (b"SteamLaunch", b"/steamapps/common/", b"lutris-wrapper")
+
+
+def hay_juego():
+    """Si hay un juego en marcha (en Windows lo dice el medidor de FPS)."""
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                orden = f.read(4096)
+        except OSError:
+            continue  # se ha cerrado o no es nuestro
+        if any(s in orden for s in SENALES_JUEGO) or orden.startswith(b"gamescope"):
+            return True
+    return False
 
 
 class Dibujo(Gtk.DrawingArea):
@@ -1053,6 +1109,34 @@ class PronosticoHoras(Dibujo):
                 pintar_texto(cr, lay, x, 62, ancho, 14, COLORES["azul"], 0.5)
 
 
+class PronosticoTira(Dibujo):
+    """Los próximos días en columnas: deja sitio a la escena del arte Cómic."""
+
+    COLUMNA = 46
+
+    def __init__(self):
+        super().__init__()
+        self.dias = []
+        self.set_size_request(-1, 62)
+        self.connect("draw", self.dibujar)
+
+    def poner(self, dias):
+        self.dias = dias
+        self.queue_draw()
+
+    def dibujar(self, _w, cr):
+        w = self.get_allocated_width()
+        n = max(1, min(len(self.dias), w // self.COLUMNA))
+        ancho = w / n
+        hoy = datetime.date.today()
+        for i, d in enumerate(self.dias[:n]):
+            x, fecha = i * ancho, datetime.date.fromisoformat(d["fecha"])
+            nombre = _("Hoy") if fecha == hoy else idioma.dia_corto(fecha.weekday())
+            pintar_texto(cr, capa_texto(self, cr, nombre, 11.5, Pango.Weight.BOLD), x, 0, ancho, 15, NORMAL, 0.5)
+            pintar_icono(cr, self, describir(d["codigo"])[1], x + (ancho - 24) / 2, 16, 24)
+            pintar_texto(cr, capa_texto(self, cr, f"{d['max']:.0f}° / {d['min']:.0f}°", 11), x, 43, ancho, 16, BLANCO, 0.5)
+
+
 class PronosticoDias(Dibujo):
     """Los próximos días: icono, lluvia y una barra de mínima a máxima."""
 
@@ -1603,6 +1687,7 @@ class Tarjeta(Gtk.EventBox):
         self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
                         | Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         # Si el contenido no cabe (celda pequeña del panel), se recorta al dibujar.
+        self.pinta_escena = None  # si hay algo animado detrás del contenido (arte Cómic)
         self.contenido = caja(True, 6)
         self._margen = None
         self.ajustar_margenes()
@@ -1752,6 +1837,8 @@ class Tarjeta(Gtk.EventBox):
                     cr.line_to(px + m, py + m)
                 cr.close_path()
                 cr.clip()
+            if self.pinta_escena:
+                self.pinta_escena(LienzoCairo(self, cr), self, w - 2 * m, h - 2 * m)
             return False
         cr.save()
         rect_redondeado(cr, x, y, cw, ch, self.radio)
@@ -2883,6 +2970,21 @@ class VentanaConfig(Gtk.Window):
         fila.pack_start(lugar, False, False, 0)
         fila.pack_start(cambiar, False, False, 0)
         self.fila(lista, "Ciudad", fila, "Busca tu ciudad para ver su tiempo")
+        if ARTE.clave == "comic":
+            o = app.opciones_escena()
+            activa = Gtk.Switch(active=o["activa"])
+            activa.connect("notify::active", lambda w, _p: app.cambiar_escena(activa=w.get_active()))
+            self.fila(lista, "Fondo animado", activa, "La escena cambia con el tiempo que hace")
+            guardian = Gtk.ComboBoxText()
+            for clave, nombre in escena_tiempo.GUARDIANES:
+                guardian.append(clave, _(nombre))
+            guardian.set_active_id(o["guardian"])
+            guardian.connect("changed", lambda w: app.cambiar_escena(guardian=w.get_active_id()))
+            self.fila(lista, "Guardián", guardian)
+            fps = Gtk.SpinButton.new_with_range(escena_tiempo.FPS_MIN, escena_tiempo.FPS_MAX, 5)
+            fps.set_value(o["fps"])
+            fps.connect("value-changed", lambda w: app.cambiar_escena(fps=w.get_value_as_int()))
+            self.fila(lista, "Imágenes por segundo", fps, "Más imágenes se ven más suaves, pero gastan más")
 
         lista = self.grupo(cont, "Calendario")
         semana = Gtk.ComboBoxText()
@@ -3410,6 +3512,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         textos.set_valign(Gtk.Align.CENTER)
         arriba.pack_start(textos, True, True, 0)
         c.add_w(arriba)
+        t["tarjeta"], t["arriba"], t["escena"] = c, arriba, escena_tiempo.Escena()
+        t["hueco"] = c.add_w(Gtk.Box(), expand=True)  # donde se ve la escena
+        t["hueco"].set_size_request(-1, 120)
         # En una celda estrecha del panel, sin el icono grande (si no, no caben los grados).
         arriba.connect("size-allocate", lambda _w, a: GLib.idle_add(
             lambda: t["icono"].set_visible(a.width >= 220 and bool(t["icono"].get_pixbuf())) or False))
@@ -3417,8 +3522,15 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         t["horas"] = c.add_w(PronosticoHoras(), prescindible=2)
         t["horas"].set_margin_top(4)
         t["dias"] = c.add_w(PronosticoDias(), expand=True)
+        t["tira"] = c.add_w(PronosticoTira())
+        for w in (t["hueco"], t["tira"], t["horas"], t["dias"]):
+            w.set_no_show_all(True)  # los enseña ajustar_escena
         t["ciudad"] = c.add_w(etiqueta("", "dim"), prescindible=1)
         self.tm = t
+        self._tic_escena = None
+        self.en_juego = False
+        self.ajustar_escena()
+        GLib.timeout_add_seconds(5, self.vigilar_juego)
 
         # Dispositivos de audio
         c = self.tarjeta("audio", "Dispositivos de audio")
@@ -4172,6 +4284,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             v.queue_draw()
         if getattr(self, "panel", None):
             self.panel.repintar_fondo()
+        if hasattr(self, "tm"):
+            self.ajustar_escena()
         if guardar:
             self.ajustar_alturas()
             # Al arrastrar un deslizador llegan muchos cambios: se guarda al parar.
@@ -4238,6 +4352,73 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.config["intervalo"] = INTERVALO
         self.guardar_config()
 
+    # --- fondo animado del tiempo (arte Cómic) ------------------------------------
+
+    def opciones_escena(self):
+        return dict(ESCENA_POR_DEFECTO, **self.config.get("escena_tiempo", {}))
+
+    def escena_activa(self):
+        return ARTE.clave == "comic" and self.opciones_escena()["activa"]
+
+    def escena_datos(self):
+        """Le dice a la escena el tiempo que hace y el guardián elegido."""
+        d, guardian = self.tiempo.datos, self.opciones_escena()["guardian"]
+        if d:
+            momento = escena_tiempo.momento_de(d["dia"], d.get("hora"), d["puesta"])
+            self.tm["escena"].poner(escena_tiempo.clima_de(d["codigo"]), momento, guardian)
+        else:
+            self.tm["escena"].poner("nubes", "dia", guardian)
+
+    def cambiar_escena(self, **cambios):
+        self.config.setdefault("escena_tiempo", {}).update(cambios)
+        self.guardar_config()
+        self.escena_datos()
+        self.ajustar_escena()
+
+    def ajustar_escena(self):
+        t, activa = self.tm, self.escena_activa()
+        for w in (t["hueco"], t["tira"]):
+            poner_visible(w, activa)
+        for w in (t["horas"], t["dias"]):
+            poner_visible(w, not activa)
+        t["tarjeta"].pinta_escena = self.pintar_escena if activa else None
+        t["tarjeta"].queue_draw()
+        if self._tic_escena:
+            GLib.source_remove(self._tic_escena)
+            self._tic_escena = None
+        if activa:
+            self._tic_escena = GLib.timeout_add(round(1000 / self.opciones_escena()["fps"]), self.tic_escena)
+
+    def tic_escena(self):
+        if self.tm["tarjeta"].get_mapped() and not self.en_juego:
+            self.tm["tarjeta"].queue_draw()
+        return True
+
+    def vigilar_juego(self):
+        if self.escena_activa():
+            self.en_juego = hay_juego()
+        return True
+
+    def pintar_escena(self, l, tarjeta, w, h):
+        t = self.tm
+
+        def rect(widget):
+            x, y = widget.translate_coordinates(tarjeta, 0, 0)
+            a = widget.get_allocation()
+            return x, y, a.width, a.height
+
+        ax, ay, aw, ah = rect(t["arriba"])
+        arriba = rect(tarjeta.lb_titulo)[1] if tarjeta.lb_titulo.get_visible() else ay
+        ancho = min(aw, t["arriba"].get_preferred_width()[1])
+        abajo = [rect(x) for x in (t["detalle"], t["tira"], t["ciudad"]) if x.get_visible()]
+        y0, y1 = min(r[1] for r in abajo) - 5, max(r[1] + r[3] for r in abajo) + 5
+        cartelas = ((ax - 6, arriba - 4, ancho + 12, ay + ah - arriba + 8), (ax - 6, y0, aw + 12, y1 - y0))
+        perfil = self.tema["panel" if tarjeta.relleno == "claro" else "widgets"]
+        fps = self.opciones_escena()["fps"]
+        s = ARTE.SOMBRA
+        t["escena"].pintar(l, 5, 5, w - s - 10, h - s - 10, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
+                           hex_rgb(perfil["fondo"]), hex_rgb(perfil["borde"]), self.tema["global"]["fuente"] or ARTE.fuente)
+
     # --- tiempo ------------------------------------------------------------------
 
     def elegir_ciudad(self):
@@ -4264,6 +4445,8 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 s=f"{d['sensacion']:.0f}", h=f"{d['humedad']:.0f}", v=f"{d['viento']:.0f}", a=d["salida"], b=d["puesta"]))
             t["horas"].poner(d["horas"])
             t["dias"].poner(d["dias"])
+            t["tira"].poner(d["dias"])
+            self.escena_datos()
         else:
             poner_texto(t["temp"], "—")
             poner_texto(t["desc"], _("Cargando…") if not self.tiempo.error else "")

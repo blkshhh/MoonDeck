@@ -117,7 +117,7 @@ class Tiempo:
         self.datos = {
             "temp": cur["temperature_2m"], "sensacion": cur["apparent_temperature"],
             "humedad": cur["relative_humidity_2m"], "viento": cur["wind_speed_10m"],
-            "codigo": cur["weather_code"], "dia": bool(cur["is_day"]),
+            "codigo": cur["weather_code"], "dia": bool(cur["is_day"]), "hora": cur["time"][11:16],
             "salida": dia["sunrise"][0][11:16], "puesta": dia["sunset"][0][11:16],
             "horas": horas, "dias": dias, "leido": time.strftime("%H:%M"),
         }
