@@ -141,39 +141,6 @@ def t_ascii(l, pal, w, h, hora, ahora, o, fecha):
             l.rect(10 + x * 6 - 2, h - px - 8, 2, px * 0.8, 0, (0, 0, 0))
 
 
-def t_comandos(l, pal, w, h, hora, ahora, o, fecha):
-    plex = "IBM Plex Mono"
-    linea = h / 6
-    px = min(max(10, linea * 0.62), w / 32)
-    aviso = f"{_usuario()}@moondeck:~$"
-    l.texto(aviso + " date", 10, 6, w - 20, linea, px, pal["gris"], "normal", 0, familia=plex)
-    grande = min(h * 0.36, w / 4.2)
-    l.texto(hora, 10, linea + 6, w - 20, h * 0.42, grande, pal["texto"], "negrita", 0, familia=plex)
-    resto = fecha + (f"  :{ahora.second:02d}" if o["segundos"] else "")
-    l.texto(resto, 10, h - 2 * linea - 4, w - 20, linea, px, pal["gris"], "normal", 0, familia=plex)
-    l.texto(aviso, 10, h - linea - 4, w - 20, linea, px, pal["gris"], "normal", 0, familia=plex)
-    if ahora.second % 2:
-        ancho, _alto = l.medir(aviso + " ", px, "normal", plex)
-        l.rect(10 + ancho, h - linea, px * 0.6, px * 1.1, 0, pal["texto"])
-
-
-def t_radar(l, pal, w, h, hora, ahora, o, fecha):
-    cx, cy, r = w * 0.36, h / 2, min(h * 0.44, w * 0.32)
-    for k in (0.33, 0.66, 1):
-        l.arco(cx, cy, r * k, 0, 2 * math.pi, 1, _alfa(pal["azul"], 0.35))
-    segundo = _segundos(ahora, o)
-
-    def punto(angulo, q):
-        return cx + math.cos(angulo) * r * q, cy + math.sin(angulo) * r * q
-    for i in range(36):
-        a = (segundo - i * 0.4) * math.pi / 30 - math.pi / 2
-        l.linea(cx, cy, *punto(a, 1), 2, _alfa(pal["azul"], 0.3 * (1 - i / 36)))
-    l.linea(cx, cy, *punto(segundo * math.pi / 30 - math.pi / 2, 1), 2, pal["azul"])
-    l.circulo(*punto((ahora.hour % 12) * math.pi / 6 - math.pi / 2, 0.45), 5, pal["texto"])
-    l.circulo(*punto(ahora.minute * math.pi / 30 - math.pi / 2, 0.85), 5, pal["texto"])
-    l.texto(hora, w * 0.66, 0, w * 0.34, h, min(w * 0.11, h * 0.26), pal["texto"], "negrita", familia="VT323")
-
-
 # --- Cómic ---------------------------------------------------------------------
 
 BANGERS = "Bangers"
@@ -254,6 +221,6 @@ def c_vinetas(l, pal, w, h, hora, ahora, o, fecha):
         l.texto(texto, x0, 0, ancho, h, min(h * 0.4, ancho * 0.62), (0.1, 0.1, 0.12), "normal", familia=BANGERS)
 
 
-DIBUJOS = {"p_cifras": p_cifras, "p_dia": p_dia, "p_consola": p_consola, "t_ascii": t_ascii, "t_comandos": t_comandos,
-           "t_radar": t_radar, "c_bocadillo": c_bocadillo, "c_explosion": c_explosion, "c_vinetas": c_vinetas}
+DIBUJOS = {"p_cifras": p_cifras, "p_dia": p_dia, "p_consola": p_consola, "t_ascii": t_ascii,
+           "c_bocadillo": c_bocadillo, "c_explosion": c_explosion, "c_vinetas": c_vinetas}
 ALTOS = {clave: 180 for clave in DIBUJOS}

@@ -60,6 +60,7 @@ class Arte:
     escala_letra = 1.0  # para las fuentes que se ven pequeñas a igual tamaño
     pixelar = 0         # si no es 0, relojes especiales e iconos se pintan a este tamaño de píxel
     relojes = ()        # (clave, nombre) de sus relojes propios (ver relojes_arte.py)
+    recomendados = ("digital", "analogico", "minimal", "anillos")  # los relojes que mejor le van
 
     def forma(self, w, h):
         """El contorno de la tarjeta (puntos del polígono), o None si es un rectángulo."""
@@ -82,7 +83,11 @@ class Arte:
         l.circulo(cx, cy, r, color)
 
     def reloj(self, l, pal, w, h, texto, ahora, o, fecha):
-        """El reloj digital, minimal o analógico. False si lo dibuja el reloj de siempre."""
+        """Los relojes propios (de cualquier arte) y, en cada arte, sus versiones del digital,
+        minimal y analógico. False si lo dibuja el reloj de siempre."""
+        if o["estilo"] in relojes_arte.DIBUJOS:
+            relojes_arte.DIBUJOS[o["estilo"]](l, pal, w, h, texto, ahora, o, fecha)
+            return True
         return False
 
     def velocimetro(self, l, pal, w, h, e):
@@ -110,8 +115,7 @@ class ConEsferas(Arte):
         l.linea(cx + c * r0, cy + s * r0, cx + c * r1, cy + s * r1, grosor, color, False)
 
     def reloj(self, l, pal, w, h, texto, ahora, o, fecha):
-        if any(o["estilo"] == clave for clave, _nombre in self.relojes):
-            relojes_arte.DIBUJOS[o["estilo"]](l, pal, w, h, texto, ahora, o, fecha)
+        if super().reloj(l, pal, w, h, texto, ahora, o, fecha):
             return True
         if o["estilo"] == "analogico":
             self._analogico(l, pal, w, h, ahora, o)
@@ -165,6 +169,7 @@ class PixelArt(ConEsferas):
     PIXEL = 3    # lo que mide un "píxel" de las esquinas, el borde y las rayas
     pixelar = 2  # los relojes especiales y los iconos del tiempo
     relojes = (("p_cifras", "Cifras gordas"), ("p_dia", "Día y noche"), ("p_consola", "Consola de bolsillo"))
+    recomendados = ("led", "p_cifras", "p_dia", "p_consola", "t_ascii")
     estilos = {
         "Game Boy": _estilo("pixel", "#9bbc0f", "#c4d86a", "#8bac0f", "#0f380f", "#8bac0f", "#0a2a0a", PIXEL),
         "8 bits": _estilo("pixel", "#ffcd75", "#f4f4f4", "#94b0c2", "#1a1c2c", "#f4f4f4", "#0d0e17", PIXEL),
@@ -238,7 +243,8 @@ class Terminal(ConEsferas):
     radio_boton = 0
     fuente = "VT323"
     escala_letra = 1.3
-    relojes = (("t_ascii", "Letras ASCII"), ("t_comandos", "Línea de comandos"), ("t_radar", "Radar"))
+    relojes = (("t_ascii", "Letras ASCII"),)
+    recomendados = ("led", "p_cifras", "t_ascii")
     estilos = {
         "Fósforo": _estilo("terminal", "#33ff66", "#7dffa0", "#2fae55", "#050d07", "#33ff66", "#000000"),
         "Ámbar": _estilo("terminal", "#ffb000", "#ffc94d", "#b37a00", "#0e0900", "#ffb000", "#000000"),
@@ -301,6 +307,8 @@ class Comic(ConEsferas):
     fuente = "Bangers"
     escala_letra = 1.2
     relojes = (("c_bocadillo", "Bocadillo"), ("c_explosion", "¡Explosión!"), ("c_vinetas", "Tres viñetas"))
+    recomendados = ("digital", "analogico", "minimal", "anillos", "p_cifras", "c_bocadillo",
+                    "c_explosion", "c_vinetas")
     SOMBRA = 6
     TINTA = 3
     estilos = {
@@ -390,3 +398,16 @@ ARTES = (Arte(), PixelArt(), Terminal(), Comic())
 def de(clave):
     """El tipo de arte por su clave (uno desconocido, Cristal: un tema de una versión más nueva)."""
     return next((a for a in ARTES if a.clave == clave), ARTES[0])
+
+
+def relojes_de(arte, generales):
+    """Los relojes de un arte: (recomendados, otros), cada uno con (clave, nombre)."""
+    todos = generales + tuple(r for a in ARTES for r in a.relojes)
+    nombres = dict(todos)
+    return ([(c, nombres[c]) for c in arte.recomendados],
+            [r for r in todos if r[0] not in arte.recomendados])
+
+
+def reloj_valido(estilo, generales):
+    """El estilo guardado, o el digital si ya no existe."""
+    return estilo if estilo in dict(generales + tuple(r for a in ARTES for r in a.relojes)) else "digital"

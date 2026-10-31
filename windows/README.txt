@@ -209,10 +209,10 @@ the one with most people (Settings > Widget options > Discord).
 CLOCK, CALENDAR, AUDIO AND SPEED
 --------------------------------
   Clock ............ adapts to the size of the widget or the cell.
-                     Right-click it:
+                     In Settings > Widget options:
                        - "Clock type": Digital, Analog, Minimalist (just the
-                         time, huge), World clock, Rings, Binary, Nixie
-                         tubes, Flip cards or 7-segment LED.
+                         time, huge), World clock, Rings, Flip
+                         cards or 7-segment LED.
                        - "24-hour format" and "Show seconds".
                        - "Cities": the world clock ones (up to 8).
   Calendar ......... the month with today highlighted; arrows to change the

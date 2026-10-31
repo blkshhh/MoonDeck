@@ -1196,7 +1196,7 @@ class RelojVista(Dibujo):
     """Reloj dibujado que se escala al tamaño que tenga (celda del panel o widget).
 
     Estilos: digital, analógico, minimalista y mundial (varias ciudades), y los de
-    esferas.py (anillos, binario, Nixie, flip y LED).
+    esferas.py (anillos, flip y LED).
     """
 
     def __init__(self, opciones):
@@ -2818,8 +2818,14 @@ class VentanaConfig(Gtk.Window):
         lista = self.grupo(cont, "Reloj")
         o = app.config["reloj"]
         tipo = Gtk.ComboBoxText()
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            tipo.append(clave, _(nombre))
+        recomendados, otros = artes.relojes_de(ARTE, ESTILOS_RELOJ)
+        for titulo, lista_relojes in (("Recomendados", recomendados), ("Otros", otros)):
+            tipo.append(f"#{titulo}", _(titulo))  # encabezado: no se puede elegir
+            for clave, nombre in lista_relojes:
+                tipo.append(clave, f"  {_(nombre)}")
+        celda = tipo.get_cells()[0]
+        tipo.set_cell_data_func(celda, lambda _c, r, m, i: r.set_property(
+            "sensitive", not m[i][1].startswith("#")))
         tipo.set_active_id(o["estilo"])
         tipo.connect("changed", lambda w: app.cambiar_reloj(estilo=w.get_active_id()))
         self.fila(lista, "Tipo de reloj", tipo)
@@ -2831,10 +2837,6 @@ class VentanaConfig(Gtk.Window):
         app.menu_ciudades(ciudades.get_popup())
         ciudades.get_popup().show_all()
         self.fila(lista, "Ciudades (reloj mundial, hasta 8)", ciudades)
-        nixie = Gtk.ColorButton(rgba=Gdk.RGBA(*hex_rgb(o.get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
-        nixie.connect("color-set", lambda b: app.cambiar_reloj(nixie=temas.a_hex(
-            (b.get_rgba().red, b.get_rgba().green, b.get_rgba().blue))))
-        self.fila(lista, "Color de los tubos Nixie", nixie)
 
         packs.llamar(app.packs, "ajustes", self, cont)
 
@@ -3294,6 +3296,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         # Reloj (tipo y opciones en el clic derecho)
         c = self.tarjeta("reloj", "Reloj")
         opciones = dict(RELOJ_POR_DEFECTO, **self.config.get("reloj", {}))
+        opciones["estilo"] = artes.reloj_valido(opciones["estilo"], ESTILOS_RELOJ)
         self.config["reloj"] = opciones
         self.reloj = c.add_w(RelojVista(opciones), expand=True)
 
@@ -3983,16 +3986,12 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         o = self.config["reloj"]
         if self.menu_de_titulo:
             tipos = self.submenu(menu, "Tipo de reloj")
-            for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-                self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
+            for titulo, lista in zip(("Recomendados", "Otros"), artes.relojes_de(ARTE, ESTILOS_RELOJ)):
+                self.item(tipos, titulo).set_sensitive(False)
+                for clave, nombre in lista:
+                    self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
             for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
                 self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
-        if self.menu_de_titulo and o["estilo"] == "nixie":
-            actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
-            sub = self.submenu(menu, "Color de los tubos")
-            for color, nombre in esferas.COLORES_NIXIE:
-                self.item(sub, nombre, lambda c=color: self.cambiar_reloj(nixie=c), actual == color)
-            self.item(sub, "Otro color…", self.elegir_color_nixie)
         if self.menu_de_titulo:
             menu.append(Gtk.SeparatorMenuItem())
 
@@ -4000,15 +3999,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         zonas = self.config["reloj"]["zonas"]
         for nombre, zona in CIUDADES:
             self.item(menu, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in zonas)
-
-    def elegir_color_nixie(self):
-        d = Gtk.ColorChooserDialog(title=_("Color de los tubos"))
-        d.set_use_alpha(False)
-        d.set_rgba(Gdk.RGBA(*hex_rgb(self.config["reloj"].get("nixie", esferas.NIXIE_POR_DEFECTO)), 1))
-        if d.run() == Gtk.ResponseType.OK:
-            c = d.get_rgba()
-            self.cambiar_reloj(nixie=temas.a_hex((c.red, c.green, c.blue)))
-        d.destroy()
 
     def mover_calendario(self, meses):
         if meses:
