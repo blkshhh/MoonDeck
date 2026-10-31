@@ -86,7 +86,7 @@ class Metodos:
         if v.reserva_abajo != reserva:
             v.reserva_abajo = reserva
             v.recalcular(asignar=False)
-        v.lienzo.queue_draw()
+        v.repintar_fondo()
         self.pintar_imagen()
         self.pintar_franja()
 
@@ -98,11 +98,11 @@ class Metodos:
         try:
             cargador.write(f.imagen)
             cargador.close()
-            v.imagen = cubrir(cargador.get_pixbuf(), *v.tam)
+            v.imagen = cubrir(cargador.get_pixbuf(), *v.tam_fondo())
         except GLib.Error as e:
             log("Fondo que no se pudo leer:", e)
-        self._fondo_tam = v.tam
-        v.lienzo.queue_draw()
+        self._fondo_tam = v.tam_fondo()
+        v.repintar_fondo()
 
     def pintar_franja(self):
         v, f = self.panel, self.fondos
@@ -137,8 +137,8 @@ class Metodos:
         f, v = self.fondos, self.panel
         f.comprobar()
         if v:
-            f.tam = v.tam
-            if f.version != self._fondo_visto or v.tam != self._fondo_tam:
+            f.tam = v.tam_fondo()
+            if f.version != self._fondo_visto or v.tam_fondo() != self._fondo_tam:
                 self._fondo_visto = f.version
                 self.pintar_imagen()
             self.pintar_franja()
