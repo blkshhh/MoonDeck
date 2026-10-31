@@ -856,4 +856,11 @@ TEXTOS = {
     '¡SON LAS': '现在是',
     '¡TIC!': '嘀!',
     '¡TAC!': '嗒!',
+    'Claude': 'Claude',
+    '5 horas': '5 小时',
+    'Semana': '本周',
+    'Lo que llevas gastado de tu plan de Claude, en 5 horas y en la semana.': '你的 Claude 套餐在 5 小时和本周内的用量。',
+    'Usa Claude Code con el mod para ver datos.': '使用带此模组的 Claude Code 即可查看数据。',
+    'Vuelve en {tiempo}': '{tiempo}后重置',
+    'Última lectura: {hora}': '上次读取:{hora}',
 }

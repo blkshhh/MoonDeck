@@ -856,4 +856,11 @@ TEXTOS = {
     '¡SON LAS': "IT'S",
     '¡TIC!': 'TICK!',
     '¡TAC!': 'TOCK!',
+    'Claude': 'Claude',
+    '5 horas': '5 hours',
+    'Semana': 'Week',
+    'Lo que llevas gastado de tu plan de Claude, en 5 horas y en la semana.': "How much of your Claude plan you've used, over 5 hours and the week.",
+    'Usa Claude Code con el mod para ver datos.': 'Use Claude Code with the mod to see data.',
+    'Vuelve en {tiempo}': 'Resets in {tiempo}',
+    'Última lectura: {hora}': 'Last reading: {hora}',
 }
