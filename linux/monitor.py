@@ -3789,8 +3789,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 menu.append(Gtk.SeparatorMenuItem())
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            if self.menu_de_titulo:
-                self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
             self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
             menu.append(Gtk.SeparatorMenuItem())
 

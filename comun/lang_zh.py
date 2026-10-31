@@ -312,7 +312,6 @@ TEXTOS = {
     ' del panel': '（面板）',
     'Automáticas (por columnas)': '自动（按列）',
     'Busca la última versión estable en github.com/{repo}. Tu configuración se conserva.': '在 github.com/{repo} 查找最新稳定版。你的设置会保留。',
-    'Ningún sensor elegido: clic derecho > «Elegir sensores…»': '没有选择传感器：右键 >“选择传感器…”',
     '{n} hilos · Encendido {tiempo}': '{n} 线程 · 已运行 {tiempo}',
     'VRAM —': 'VRAM —',
     'L {v}': '读 {v}',
@@ -886,4 +885,7 @@ TEXTOS = {
     'Unsplash no tiene fotos con esas etiquetas.': 'Unsplash 没有这些标签的照片。',
     'Unsplash ha fallado ({codigo}).': 'Unsplash 出错({codigo})。',
     'No se pudo conectar con Unsplash.': '无法连接到 Unsplash。',
+    'Ningún sensor elegido: elígelos en Configuración > Opciones de widgets.': '未选择传感器:请在 设置 > 小组件选项 中选择。',
+    'Elegir…': '选择…',
+    'Sensores que se muestran': '显示的传感器',
 }

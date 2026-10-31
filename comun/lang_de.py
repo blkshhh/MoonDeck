@@ -312,7 +312,6 @@ TEXTOS = {
     ' del panel': ' des Panels',
     'Automáticas (por columnas)': 'Automatisch (in Spalten)',
     'Busca la última versión estable en github.com/{repo}. Tu configuración se conserva.': 'Sucht die neueste stabile Version auf github.com/{repo}. Deine Einstellungen bleiben erhalten.',
-    'Ningún sensor elegido: clic derecho > «Elegir sensores…»': 'Kein Sensor ausgewählt: Rechtsklick > „Sensoren auswählen…“',
     '{n} hilos · Encendido {tiempo}': '{n} Threads · Laufzeit {tiempo}',
     'VRAM —': 'VRAM —',
     'L {v}': 'L {v}',
@@ -886,4 +885,7 @@ TEXTOS = {
     'Unsplash no tiene fotos con esas etiquetas.': 'Unsplash hat keine Fotos mit diesen Schlagwörtern.',
     'Unsplash ha fallado ({codigo}).': 'Unsplash ist fehlgeschlagen ({codigo}).',
     'No se pudo conectar con Unsplash.': 'Verbindung zu Unsplash fehlgeschlagen.',
+    'Ningún sensor elegido: elígelos en Configuración > Opciones de widgets.': 'Kein Sensor ausgewählt: Wähle sie unter Einstellungen > Widget-Optionen.',
+    'Elegir…': 'Auswählen…',
+    'Sensores que se muestran': 'Angezeigte Sensoren',
 }

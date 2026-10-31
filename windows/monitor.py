@@ -3912,8 +3912,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 menu.addSeparator()
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            if self.menu_de_titulo:
-                menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
 
