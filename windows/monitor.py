@@ -3898,20 +3898,22 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 a.setChecked(sc is elegida)
 
     def opciones_tarjeta(self, tarjeta, menu):
-        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
-        es lo que sale al pulsar su título."""
+        """Lo que es solo de ese widget (juego, ciudades del reloj...): va en su clic derecho y en
+        el clic en su título. Lo que tiene sitio en Configuración sale solo en el título."""
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
-        if tarjeta.clave == "calendario":
-            sub = menu.addMenu(_("La semana empieza en"))
-            for dia in (0, 6):
-                a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
-                a.setCheckable(True)
-                a.setChecked(self.primer_dia() == dia)
-            menu.addSeparator()
+        if self.menu_de_titulo:
+            if tarjeta.clave == "calendario":
+                sub = menu.addMenu(_("La semana empieza en"))
+                for dia in (0, 6):
+                    a = sub.addAction(idioma.dia_semana(dia).capitalize(), lambda _x=False, d=dia: self.cambiar_semana(d))
+                    a.setCheckable(True)
+                    a.setChecked(self.primer_dia() == dia)
+                menu.addSeparator()
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
+            if self.menu_de_titulo:
+                menu.addAction(_("Cambiar ciudad…"), lambda: self.elegir_ciudad(tarjeta.window()))
             menu.addAction(_("Actualizar ahora"), self.tiempo._despertar.set)
             menu.addSeparator()
 
@@ -3927,10 +3929,14 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             menu.exec(punto)
 
 
+    menu_de_titulo = False  # True mientras se monta el menú del título (no el del clic derecho)
+
     def menu_titulo(self, tarjeta):
         """El menú del título: solo las opciones de ese widget, o None si no tiene."""
         menu = QMenu()
+        self.menu_de_titulo = True
         self.opciones_tarjeta(tarjeta, menu)
+        self.menu_de_titulo = False
         while menu.actions() and menu.actions()[-1].isSeparator():
             menu.removeAction(menu.actions()[-1])
         return menu if menu.actions() else None
@@ -3971,12 +3977,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             else:
                 menu.addAction(_("Sacar del panel (ventana aparte, siempre encima)"),
                                lambda: self.sacar_del_panel(tarjeta))
-        a = menu.addAction(_("Mostrar título"), lambda: self.alternar_titulo(tarjeta))
-        a.setCheckable(True)
-        a.setChecked(tarjeta.clave not in self.config.get("sin_titulo", []))
-        a = menu.addAction(_("Mostrar fondo y borde"), lambda: self.alternar_fondo(tarjeta))
-        a.setCheckable(True)
-        a.setChecked(not tarjeta.sin_fondo())
         menu.addAction(_("Ocultar este widget"), lambda: self.alternar_widget(tarjeta))
         menu.addSeparator()
         self.acciones_comunes(menu, tarjeta.window())
@@ -4124,21 +4124,22 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def menu_reloj(self, menu):
         o = self.config["reloj"]
-        tipos = menu.addMenu(_("Tipo de reloj"))
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
-            a.setCheckable(True)
-            a.setChecked(o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
-            a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
-            a.setCheckable(True)
-            a.setChecked(o[clave])
+        if self.menu_de_titulo:
+            tipos = menu.addMenu(_("Tipo de reloj"))
+            for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
+                a = tipos.addAction(_(nombre), lambda _=False, c=clave: self.cambiar_reloj(estilo=c))
+                a.setCheckable(True)
+                a.setChecked(o["estilo"] == clave)
+            for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
+                a = menu.addAction(_(texto), lambda _=False, c=clave: self.cambiar_reloj(**{c: not o[c]}))
+                a.setCheckable(True)
+                a.setChecked(o[clave])
         ciudades = menu.addMenu(_("Ciudades (reloj mundial, hasta 8)"))
         for nombre, zona in CIUDADES:
             a = ciudades.addAction(_(nombre), lambda _=False, z=zona: self.cambiar_reloj(zona=z))
             a.setCheckable(True)
             a.setChecked(zona in o["zonas"])
-        if o["estilo"] == "nixie":
+        if self.menu_de_titulo and o["estilo"] == "nixie":
             actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
             sub = menu.addMenu(_("Color de los tubos"))
             for color, nombre in esferas.COLORES_NIXIE:

@@ -183,9 +183,10 @@ class Metodos:
                 self.item(menu, "Mover a la izquierda", lambda: self.mover_app(i, i - 1))
             if i < len(apps) - 1:
                 self.item(menu, "Mover a la derecha", lambda: self.mover_app(i, i + 1))
-        sub = self.submenu(menu, "Color de los iconos")
-        for clave, nombre in lanzador.COLORES_ICONOS:
-            self.item(sub, nombre, lambda c=clave: self.color_apps(c), self.config.get("apps_color", "original") == clave)
+        if self.menu_de_titulo:
+            sub = self.submenu(menu, "Color de los iconos")
+            for clave, nombre in lanzador.COLORES_ICONOS:
+                self.item(sub, nombre, lambda c=clave: self.color_apps(c), self.config.get("apps_color", "original") == clave)
         menu.append(Gtk.SeparatorMenuItem())
 
     def anadir_apps(self):

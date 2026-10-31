@@ -3769,9 +3769,6 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             else:
                 self.item(menu, "Sacar del panel (ventana aparte, siempre encima)",
                           lambda: self.sacar_del_panel(tarjeta))
-        self.item(menu, "Mostrar título", lambda: self.alternar_titulo(tarjeta),
-                  tarjeta.clave not in self.config.get("sin_titulo", []))
-        self.item(menu, "Mostrar fondo y borde", lambda: self.alternar_fondo(tarjeta), not tarjeta.sin_fondo())
         self.item(menu, "Ocultar este widget", lambda: self.alternar_widget(tarjeta))
         menu.append(Gtk.SeparatorMenuItem())
         self.acciones_comunes(menu)
@@ -3780,18 +3777,20 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         return menu
 
     def opciones_tarjeta(self, tarjeta, menu):
-        """Lo que es solo de ese widget (tipo de reloj, juego, ciudad...): va en su clic derecho y
-        es lo que sale al pulsar su título."""
+        """Lo que es solo de ese widget (juego, ciudades del reloj...): va en su clic derecho y en
+        el clic en su título. Lo que tiene sitio en Configuración sale solo en el título."""
         if tarjeta.clave == "reloj":
             self.menu_reloj(menu)
-        if tarjeta.clave == "calendario":
-            sub = self.submenu(menu, "La semana empieza en")
-            for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
-                self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
-            menu.append(Gtk.SeparatorMenuItem())
+        if self.menu_de_titulo:
+            if tarjeta.clave == "calendario":
+                sub = self.submenu(menu, "La semana empieza en")
+                for dia, nombre in ((0, idioma.dia_semana(0)), (6, idioma.dia_semana(6))):
+                    self.item(sub, nombre.capitalize(), lambda d=dia: self.cambiar_semana(d), self.primer_dia() == dia)
+                menu.append(Gtk.SeparatorMenuItem())
         packs.llamar(self.packs_de(tarjeta), "menu", self, tarjeta, menu)
         if tarjeta.clave == "tiempo":
-            self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
+            if self.menu_de_titulo:
+                self.item(menu, "Cambiar ciudad…", self.elegir_ciudad)
             self.item(menu, "Actualizar ahora", self.tiempo._despertar.set)
             menu.append(Gtk.SeparatorMenuItem())
 
@@ -3808,10 +3807,14 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             self._menu_tarjeta = menu  # que no lo borre el recolector mientras se muestra
             menu.popup_at_widget(tarjeta.lb_titulo, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, ev)
 
+    menu_de_titulo = False  # True mientras se monta el menú del título (no el del clic derecho)
+
     def menu_titulo(self, tarjeta):
         """El menú del título: solo las opciones de ese widget, o None si no tiene."""
         menu = Gtk.Menu()
+        self.menu_de_titulo = True
         self.opciones_tarjeta(tarjeta, menu)
+        self.menu_de_titulo = False
         while menu.get_children() and isinstance(menu.get_children()[-1], Gtk.SeparatorMenuItem):
             menu.remove(menu.get_children()[-1])
         return menu if menu.get_children() else None
@@ -3976,15 +3979,16 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
     def menu_reloj(self, menu):
         o = self.config["reloj"]
-        tipos = self.submenu(menu, "Tipo de reloj")
-        for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
-            self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
-        for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
-            self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
+        if self.menu_de_titulo:
+            tipos = self.submenu(menu, "Tipo de reloj")
+            for clave, nombre in ESTILOS_RELOJ + ARTE.relojes:
+                self.item(tipos, nombre, lambda c=clave: self.cambiar_reloj(estilo=c), o["estilo"] == clave)
+            for texto, clave in (("Formato 24 horas", "h24"), ("Mostrar segundos", "segundos"), ("Mostrar la fecha", "fecha")):
+                self.item(menu, texto, lambda c=clave: self.cambiar_reloj(**{c: not o[c]}), o[clave])
         ciudades = self.submenu(menu, "Ciudades (reloj mundial, hasta 8)")
         for nombre, zona in CIUDADES:
             self.item(ciudades, nombre, lambda z=zona: self.cambiar_reloj(zona=z), zona in o["zonas"])
-        if o["estilo"] == "nixie":
+        if self.menu_de_titulo and o["estilo"] == "nixie":
             actual = o.get("nixie", esferas.NIXIE_POR_DEFECTO)
             sub = self.submenu(menu, "Color de los tubos")
             for color, nombre in esferas.COLORES_NIXIE:
