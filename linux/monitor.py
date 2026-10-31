@@ -125,6 +125,7 @@ except Exception:
 EFECTO = "cristal"     # "cristal" (desenfoque de COSMIC) o "ninguno" (fondo oscuro translúcido)
 INTERVALO = 1.0        # segundos entre lecturas
 HISTORIAL = 120        # muestras en las gráficas
+FOTOGRAMA_GRAFICA = 50 # ms entre dibujos de una gráfica mientras se desliza
 ANCHO = 340            # ancho de cada widget
 SEPARACION = 14        # espacio entre widgets al colocarlos
 COLUMNAS = 4
@@ -532,22 +533,49 @@ class Grafica(Dibujo):
         super().__init__()
         self.poner_alto(28, alto)
         self.maximo = maximo
-        self.series = [(COLORES[c], deque([0.0] * HISTORIAL, maxlen=HISTORIAL)) for c in series]
+        # Una muestra de más: la que se va saliendo por la izquierda mientras entra la nueva.
+        self.series = [(COLORES[c], deque([0.0] * (HISTORIAL + 1), maxlen=HISTORIAL + 1)) for c in series]
+        self.t_dato = time.monotonic()
+        self.ritmo = INTERVALO  # segundos entre muestras, medidos
+        self.tope_visto = 1.0
+        self.reescalando = False
+        self.tramo = 0
         self.connect("draw", self.dibujar)
+        GLib.timeout_add(FOTOGRAMA_GRAFICA, self._fluir)
+
+    def _fluir(self):
+        # Solo si el dibujo se ha movido medio píxel: se desliza pocos píxeles por segundo.
+        paso = ARTE.paso_grafica or self.get_allocated_width() / (HISTORIAL - 1)
+        tramo = int(self.fase() * paso * 2)
+        if self.get_mapped() and (tramo != self.tramo or self.reescalando):
+            self.tramo = tramo
+            self.queue_draw()
+        return True
 
     def push(self, *valores):
         for (_, datos), v in zip(self.series, valores):
             datos.append(v if v is not None else 0.0)
+        ahora = time.monotonic()
+        self.ritmo += (min(ahora - self.t_dato, 6.0) - self.ritmo) * 0.3
+        self.t_dato = ahora
         self.queue_draw()
+
+    def fase(self):
+        """Lo que lleva entrada la muestra más nueva (0-1). La gráfica va una muestra por detrás
+        de los datos: así hay a dónde ir y el dibujo se mueve sin parar entre dos lecturas."""
+        return min((time.monotonic() - self.t_dato) / max(self.ritmo, 0.1), 1.0)
 
     def dibujar(self, _w, cr):
         w, h = self.get_allocated_width(), self.get_allocated_height()
         tope = self.maximo
         if tope is None:
-            tope = max((max(d) for _, d in self.series), default=1.0)
-            tope = max(tope * 1.15, 1.0)
+            objetivo = artes.tope_automatico(self.series, ARTE.muestras(w))
+            self.tope_visto += (objetivo - self.tope_visto) * 0.2
+            self.reescalando = abs(objetivo - self.tope_visto) > objetivo * 0.01
+            tope = self.tope_visto
+        fase = self.fase()
         if ARTE.dibuja:
-            ARTE.grafica(LienzoCairo(self, cr), self.series, tope, w, h, paleta())
+            ARTE.grafica(LienzoCairo(self, cr), self.series, tope, w, h, paleta(), fase)
             return
         rect_redondeado(cr, 0, 0, w, h, 6)
         cr.set_source_rgba(0, 0, 0, SOMBRA)
@@ -559,15 +587,17 @@ class Grafica(Dibujo):
             cr.move_to(0, y)
             cr.line_to(w, y)
         cr.stroke()
+        rect_redondeado(cr, 0, 0, w, h, 6)
+        cr.clip()
         paso = w / (HISTORIAL - 1)
         for (r, g, b), datos in self.series:
-            puntos = [(i * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
+            puntos = [((i - fase) * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
             cr.move_to(*puntos[0])
             for p in puntos[1:]:
                 cr.line_to(*p)
             camino = cr.copy_path()
-            cr.line_to(w, h)
-            cr.line_to(0, h)
+            cr.line_to(puntos[-1][0], h)
+            cr.line_to(puntos[0][0], h)
             cr.close_path()
             cr.set_source_rgba(r, g, b, 0.16)
             cr.fill()
