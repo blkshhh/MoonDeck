@@ -2045,6 +2045,10 @@ class VentanaPanel(QWidget):
         self.aplicar_cristal()
         self.barra = BarraEdicion(self)
         self.barra.hide()
+        self.imagen = None       # foto de fondo, del tamaño del panel (la pone un pack)
+        self.franja = None       # controles de abajo (los pone un pack)
+        self.reserva_abajo = 0   # lo que esos controles le quitan a la cuadrícula
+        packs.llamar(app.packs, "panel", app, self)
 
     def aplicar_cristal(self):
         p = self.app.tema["panel"]
@@ -2186,7 +2190,7 @@ class VentanaPanel(QWidget):
     def area(self):
         arriba = self.MARGEN_EDICION if self.editando else self.MARGEN
         return QRectF(self.MARGEN, arriba, self.width() - 2 * self.MARGEN,
-                      self.height() - arriba - self.MARGEN)
+                      self.height() - arriba - self.MARGEN - self.reserva_abajo)
 
     def tam_celda(self):
         a = self.area()
@@ -2210,6 +2214,8 @@ class VentanaPanel(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self.colocar_tarjetas()
+        if self.franja:
+            self.franja.setGeometry(0, self.height() - self.franja.ALTO, self.width(), self.franja.ALTO)
 
     # --- edición -------------------------------------------------------------
 
@@ -2304,8 +2310,10 @@ class VentanaPanel(QWidget):
     def paintEvent(self, _e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        # El fondo del tema (color, opacidad) encima del cristal.
-        pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
+        if self.imagen:
+            p.drawPixmap(0, 0, self.imagen)
+        else:  # El fondo del tema (color, opacidad) encima del cristal.
+            pintar_fondo(p, self.app.tema["panel"], QRectF(self.rect()), 1.0, "panel_")
         if self.editando:
             # Celdas de la cuadrícula (se ven en los huecos y al mover un widget).
             p.setPen(QPen(tenue(45), 1, Qt.DashLine))
@@ -3083,9 +3091,11 @@ class VentanaConfig(QWidget):
 
     def pagina_panel(self, caja):
         s = "panel"
-        lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
-        self.fila(lista, "Color", self.color(s, "panel_fondo"))
-        self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        if not any(packs.llamar(self.app.packs, "fondo_propio", self.app)):
+            lista = self.grupo(caja, "Fondo del panel", "El velo que cubre toda la pantalla en el modo panel.")
+            self.fila(lista, "Color", self.color(s, "panel_fondo"))
+            self.fila(lista, "Opacidad", self.deslizador(s, "panel_opacidad", 0, 100, 100), "0 % = solo cristal")
+        packs.llamar(self.app.packs, "ajustes_panel", self, caja)
         self.pagina_tarjetas(caja, s)
 
     def pagina_disposicion(self, caja):
