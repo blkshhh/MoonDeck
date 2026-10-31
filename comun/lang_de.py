@@ -836,4 +836,12 @@ TEXTOS = {
     '8 bits': '8-Bit',
     'Arcade': 'Arcade',
     'Mazmorra': 'Verlies',
+    'Cómic': 'Comic',
+    'Terminal': 'Terminal',
+    'Pop': 'Pop',
+    'Noir': 'Noir',
+    'Tebeo': 'Altes Comicheft',
+    'Fósforo': 'Phosphor',
+    'Ámbar': 'Bernstein',
+    'Hielo': 'Eis',
 }

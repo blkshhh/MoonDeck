@@ -836,4 +836,12 @@ TEXTOS = {
     '8 bits': '8 位',
     'Arcade': '街机',
     'Mazmorra': '地牢',
+    'Cómic': '漫画',
+    'Terminal': '终端',
+    'Pop': '波普',
+    'Noir': '黑色',
+    'Tebeo': '老漫画',
+    'Fósforo': '荧光',
+    'Ámbar': '琥珀',
+    'Hielo': '冰',
 }

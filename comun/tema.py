@@ -13,7 +13,7 @@ POR_DEFECTO = {
         "acento": "#4d8dff",
         "texto": "#f2f4f8",        # cifras grandes, horas...
         "texto_sec": "#9aa3b2",    # textos secundarios
-        "arte": "cristal",         # tipo de arte: cómo se dibuja (ver TIPOS_ARTE)
+        "arte": "cristal",         # tipo de arte: cómo se dibuja (ver artes.py)
         "fuente": "",              # "" = la del sistema
         "escala": 1.0,             # tamaño de letra
     },
@@ -163,62 +163,6 @@ PREDEFINIDOS = {
         "panel": dict(POR_DEFECTO["panel"], opacidad=0.0, borde_opacidad=0.2, radio=4, panel_opacidad=0.3),
     },
 }
-
-
-def _pixel(acento, texto, sec, fondo, borde, velo):
-    """Un estilo de pixel art: colores planos, sin cristal ni degradado."""
-    tarjeta = dict(fondo=fondo, opacidad=1.0, degradado=False, borde=borde, borde_opacidad=1.0,
-                   borde_grosor=PIXEL, radio=0, cristal=False, neon=False, parpadeo=False)
-    return {"global": dict(POR_DEFECTO["global"], arte="pixel", acento=acento, texto=texto, texto_sec=sec),
-            "widgets": dict(POR_DEFECTO["widgets"], **tarjeta),
-            "panel": dict(POR_DEFECTO["panel"], **tarjeta, panel_fondo=velo, panel_opacidad=0.92)}
-
-
-PIXEL = 3  # lo que mide un "píxel" de las esquinas y el borde de las tarjetas
-
-PIXEL_ART = {
-    "Game Boy": _pixel("#9bbc0f", "#c4d86a", "#8bac0f", "#0f380f", "#8bac0f", "#0a2a0a"),
-    "8 bits": _pixel("#ffcd75", "#f4f4f4", "#94b0c2", "#1a1c2c", "#f4f4f4", "#0d0e17"),
-    "Arcade": _pixel("#ff2e88", "#f5f0ff", "#9d8bd1", "#140c2a", "#29e7ff", "#07040f"),
-    "Mazmorra": _pixel("#e09f3e", "#f1e3c6", "#a8917a", "#2b2119", "#7a5c3e", "#120d09"),
-}
-
-# (clave, nombre): cada tipo de arte dibuja a su manera y tiene sus estilos (ver estilos)
-TIPOS_ARTE = (("cristal", "Cristal"), ("pixel", "Pixel art"))
-
-
-def estilos(arte):
-    """Los estilos de un tipo de arte: {nombre: tema}."""
-    return PIXEL_ART if arte == "pixel" else PREDEFINIDOS
-
-
-def contorno_pixel(x, y, w, h, b=PIXEL):
-    """Rectángulo con las esquinas en dos escalones: los puntos del polígono."""
-    d, e = b, 2 * b
-    der, abajo = x + w, y + h
-    return [(x + e, y), (der - e, y), (der - e, y + d), (der - d, y + d), (der - d, y + e), (der, y + e),
-            (der, abajo - e), (der - d, abajo - e), (der - d, abajo - d), (der - e, abajo - d), (der - e, abajo),
-            (x + e, abajo), (x + e, abajo - d), (x + d, abajo - d), (x + d, abajo - e), (x, abajo - e),
-            (x, y + e), (x + d, y + e), (x + d, y + d), (x + e, y + d)]
-
-
-def tramos_barra(largo, frac, celda=6, hueco=2):
-    """Una barra por bloques: [(posición, largo, lleno)]."""
-    n = max(1, (largo + hueco) // (celda + hueco))
-    llenos = round(min(max(frac, 0.0), 1.0) * n)
-    paso = (largo + hueco) / n
-    return [(round(i * paso), round((i + 1) * paso - hueco) - round(i * paso), i < llenos) for i in range(n)]
-
-
-def columnas_grafica(datos, tope, w, h, b=4):
-    """Una serie de la gráfica en columnas de b px, a saltos de b: [(x, y de arriba)]."""
-    datos = list(datos)
-    n = max(1, w // b)
-    columnas = []
-    for i in range(n):
-        v = datos[round(i * (len(datos) - 1) / max(1, n - 1))]
-        columnas.append((i * b, h - b - round(min(v / tope, 1.0) * (h - b) / b) * b))
-    return columnas
 
 
 def completo(tema):
