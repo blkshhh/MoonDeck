@@ -538,11 +538,17 @@ class Grafica(Dibujo):
         self.t_dato = time.monotonic()
         self.ritmo = INTERVALO  # segundos entre muestras, medidos
         self.tope_visto = 1.0
+        self.reescalando = False
+        self.tramo = 0
         self.connect("draw", self.dibujar)
         GLib.timeout_add(FOTOGRAMA_GRAFICA, self._fluir)
 
     def _fluir(self):
-        if self.get_mapped():  # si COSMIC no la enseña (un juego encima), no llega a dibujarse
+        # Solo si el dibujo se ha movido medio píxel: se desliza pocos píxeles por segundo.
+        paso = ARTE.paso_grafica or self.get_allocated_width() / (HISTORIAL - 1)
+        tramo = int(self.fase() * paso * 2)
+        if self.get_mapped() and (tramo != self.tramo or self.reescalando):
+            self.tramo = tramo
             self.queue_draw()
         return True
 
@@ -563,7 +569,9 @@ class Grafica(Dibujo):
         w, h = self.get_allocated_width(), self.get_allocated_height()
         tope = self.maximo
         if tope is None:
-            self.tope_visto += (artes.tope_automatico(self.series, ARTE.muestras(w)) - self.tope_visto) * 0.2
+            objetivo = artes.tope_automatico(self.series, ARTE.muestras(w))
+            self.tope_visto += (objetivo - self.tope_visto) * 0.2
+            self.reescalando = abs(objetivo - self.tope_visto) > objetivo * 0.01
             tope = self.tope_visto
         fase = self.fase()
         if ARTE.dibuja:

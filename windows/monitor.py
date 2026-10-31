@@ -332,12 +332,18 @@ class Grafica(QWidget):
         self.t_dato = time.monotonic()
         self.ritmo = INTERVALO  # segundos entre muestras, medidos
         self.tope_visto = 1.0
+        self.reescalando = False
+        self.tramo = 0
         self.reloj = QTimer(self)
         self.reloj.timeout.connect(self._fluir)
         self.reloj.start(FOTOGRAMA_GRAFICA)
 
     def _fluir(self):
-        if self.isVisible():
+        # Solo si el dibujo se ha movido medio píxel: se desliza pocos píxeles por segundo.
+        paso = ARTE.paso_grafica or self.width() / (HISTORIAL - 1)
+        tramo = int(self.fase() * paso * 2)
+        if self.isVisible() and (tramo != self.tramo or self.reescalando):
+            self.tramo = tramo
             self.update()
 
     def push(self, *valores):
@@ -360,7 +366,9 @@ class Grafica(QWidget):
         series = [(rgb(c), d) for c, d in self.series]
         tope = self.maximo
         if tope is None:
-            self.tope_visto += (artes.tope_automatico(series, ARTE.muestras(w)) - self.tope_visto) * 0.2
+            objetivo = artes.tope_automatico(series, ARTE.muestras(w))
+            self.tope_visto += (objetivo - self.tope_visto) * 0.2
+            self.reescalando = abs(objetivo - self.tope_visto) > objetivo * 0.01
             tope = self.tope_visto
         fase = self.fase()
         if ARTE.dibuja:
