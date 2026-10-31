@@ -1692,7 +1692,10 @@ class Tarjeta(QWidget):
             self._fondo_hecho = (clave, img)
         p.drawPixmap(0, 0, self._fondo_hecho[1])
         if self.pinta_escena:
+            p.save()
+            p.setClipPath(ruta)
             self.pinta_escena(LienzoQt(self, p), self, self.width() - 2 * m, self.height() - 2 * m)
+            p.restore()
         r = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         if self.en_edicion():
             p.setBrush(Qt.NoBrush)
@@ -4557,7 +4560,9 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
         ax, ay, aw, ah = rect(t["arriba"])
         arriba = rect(tarjeta.lb_titulo)[1] if tarjeta.lb_titulo.isVisible() else ay
-        ancho = min(aw, t["arriba"].sizeHint().width())
+        # Lo que ocupan los textos de verdad: el ancho pedido no cuenta los que se pueden recortar.
+        fin = max(rect(x)[0] + x.fontMetrics().horizontalAdvance(x.text()) for x in (t["temp"], t["desc"]))
+        ancho = min(aw, fin - ax + 4)
         abajo = [rect(x) for x in (t["detalle"], t["tira"], t["ciudad"]) if x.isVisible()]
         if not abajo:
             return
@@ -4566,9 +4571,10 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         perfil = tarjeta.perfil()
         fps = self.opciones_escena()["fps"]
         s = ARTE.SOMBRA
-        t["escena"].pintar(l, 5, 5, w - s - 10, h - s - 10, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
-                           temas.hex_rgb(perfil["fondo"]), temas.hex_rgb(perfil["borde"]),
-                           self.tema["global"]["fuente"] or ARTE.fuente)
+        tinta = temas.hex_rgb(perfil["borde"])
+        t["escena"].pintar(l, 0, 0, w - s, h - s, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
+                           temas.hex_rgb(perfil["fondo"]), tinta, self.tema["global"]["fuente"] or ARTE.fuente)
+        l.contorno(ARTE.forma(w, h), ARTE.TINTA * 2, tinta)  # el borde: la escena ha pintado encima
 
     def cambiar_intervalo(self, valor):
         global INTERVALO

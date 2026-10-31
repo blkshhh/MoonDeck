@@ -662,7 +662,7 @@ def _mariposa(pc, t):
 def _zetas(pc, t, fuente):
     for i in range(3):
         f = (t * .24 + i / 3) % 1
-        x, y = GX - 54 - f * 28 + math.sin(f * 7) * 5, GY - 92 - f * 56
+        x, y = GX + 54 + f * 26 + math.sin(f * 7) * 5, GY - 96 - f * 50
         pc.texto("Z", x + 1.5, y + 1.5, 15 + f * 15, TINTA, fuente)
         pc.texto("Z", x, y, 15 + f * 15, _rgb("#fff3bd"), fuente)
 
@@ -724,7 +724,7 @@ class Escena:
             self.gotas_fondo = _gotas(60, 900, self.inclina, clima, True)
 
     def pintar(self, l, x, y, w, h, suelo, t, cartelas=(), papel=(1, 1, 1), tinta=TINTA, fuente=None):
-        """Llena el rectángulo x, y, w, h. suelo: la altura (en la tarjeta) donde pisa el guardián.
+        """Llena el rectángulo x, y, w, h (quien llama recorta la forma de la tarjeta). suelo: la altura (en la tarjeta) donde pisa el guardián.
         cartelas: rectángulos de papel para los textos, con los colores del tema."""
         E, p = self.E, self.p
         clima, momento, tipo = E["clima"], E["momento"], E["tipo"]
@@ -739,7 +739,6 @@ class Escena:
 
         ciclo = t % 6.5
         flash = clima == "tormenta" and (ciclo < .22 or .36 < ciclo < .52)
-        l.recortar(x, y, w, h, 0)
         if flash:
             l.rect(x, y, w, h, 0, _rgb("#fff6c8"))
             _rayo(pc, 118 + math.floor(t / 6.5) % 3 * 40)
@@ -807,4 +806,3 @@ class Escena:
             l.rect(cx + 3, cy + 3, cw, ch, 0, tinta)
             l.rect(cx, cy, cw, ch, 0, papel)
             l.contorno([(cx, cy), (cx + cw, cy), (cx + cw, cy + ch), (cx, cy + ch)], 2.5, tinta)
-        l.sin_recorte()

@@ -4409,15 +4409,19 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
 
         ax, ay, aw, ah = rect(t["arriba"])
         arriba = rect(tarjeta.lb_titulo)[1] if tarjeta.lb_titulo.get_visible() else ay
-        ancho = min(aw, t["arriba"].get_preferred_width()[1])
+        # Lo que ocupan los textos de verdad: el ancho pedido no cuenta los que se pueden recortar.
+        fin = max(rect(x)[0] + x.get_layout().get_pixel_size()[0] for x in (t["temp"], t["desc"]))
+        ancho = min(aw, fin - ax + 4)
         abajo = [rect(x) for x in (t["detalle"], t["tira"], t["ciudad"]) if x.get_visible()]
         y0, y1 = min(r[1] for r in abajo) - 5, max(r[1] + r[3] for r in abajo) + 5
         cartelas = ((ax - 6, arriba - 4, ancho + 12, ay + ah - arriba + 8), (ax - 6, y0, aw + 12, y1 - y0))
         perfil = self.tema["panel" if tarjeta.relleno == "claro" else "widgets"]
         fps = self.opciones_escena()["fps"]
         s = ARTE.SOMBRA
-        t["escena"].pintar(l, 5, 5, w - s - 10, h - s - 10, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
-                           hex_rgb(perfil["fondo"]), hex_rgb(perfil["borde"]), self.tema["global"]["fuente"] or ARTE.fuente)
+        tinta = hex_rgb(perfil["borde"])
+        t["escena"].pintar(l, 0, 0, w - s, h - s, y0 - 2, math.floor(time.monotonic() * fps) / fps, cartelas,
+                           hex_rgb(perfil["fondo"]), tinta, self.tema["global"]["fuente"] or ARTE.fuente)
+        l.contorno(ARTE.forma(w, h), ARTE.TINTA * 2, tinta)  # el borde: la escena ha pintado encima
 
     # --- tiempo ------------------------------------------------------------------
 
