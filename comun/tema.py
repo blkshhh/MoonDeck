@@ -13,6 +13,7 @@ POR_DEFECTO = {
         "acento": "#4d8dff",
         "texto": "#f2f4f8",        # cifras grandes, horas...
         "texto_sec": "#9aa3b2",    # textos secundarios
+        "arte": "cristal",         # tipo de arte: cómo se dibuja (ver artes.py)
         "fuente": "",              # "" = la del sistema
         "escala": 1.0,             # tamaño de letra
     },

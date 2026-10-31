@@ -103,6 +103,7 @@ try:
     from escritorios import Escritorios, vista_general
     from multimedia import Dispositivos, Mezclador, Reproductores
     from tiempo import CIUDAD_POR_DEFECTO, Tiempo, buscar_ciudades, describir
+    import artes
     import tema as temas
     import idioma
     from idioma import _
@@ -155,8 +156,9 @@ ESCALA = 1.0    # tamaño de letra
 
 
 def aplicar_colores(t):
-    global BLANCO, GRIS, GRIS_CLARO, NORMAL, CLARO, TITULO, TENUE, SOMBRA, ESCALA
+    global BLANCO, GRIS, GRIS_CLARO, NORMAL, CLARO, TITULO, TENUE, SOMBRA, ESCALA, ARTE
     g = t["global"]
+    ARTE = artes.de(g["arte"])
     COLORES["azul"] = hex_rgb(g["acento"])
     BLANCO, GRIS = hex_rgb(g["texto"]), hex_rgb(g["texto_sec"])
     CLARO = temas.mezcla(BLANCO, GRIS, 0.1)
@@ -508,6 +510,13 @@ class Grafica(Dibujo):
 
     def dibujar(self, _w, cr):
         w, h = self.get_allocated_width(), self.get_allocated_height()
+        tope = self.maximo
+        if tope is None:
+            tope = max((max(d) for _, d in self.series), default=1.0)
+            tope = max(tope * 1.15, 1.0)
+        if ARTE.dibuja:
+            ARTE.grafica(LienzoCairo(self, cr), self.series, tope, w, h, paleta())
+            return
         rect_redondeado(cr, 0, 0, w, h, 6)
         cr.set_source_rgba(0, 0, 0, SOMBRA)
         cr.fill()
@@ -518,10 +527,6 @@ class Grafica(Dibujo):
             cr.move_to(0, y)
             cr.line_to(w, y)
         cr.stroke()
-        tope = self.maximo
-        if tope is None:
-            tope = max((max(d) for _, d in self.series), default=1.0)
-            tope = max(tope * 1.15, 1.0)
         paso = w / (HISTORIAL - 1)
         for (r, g, b), datos in self.series:
             puntos = [(i * paso, h - min(v / tope, 1.0) * (h - 2) - 1) for i, v in enumerate(datos)]
@@ -558,12 +563,15 @@ class Barra(Dibujo):
 
     def dibujar(self, _w, cr):
         w = self.get_allocated_width()
+        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
+                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
+        if ARTE.dibuja:
+            ARTE.barra(LienzoCairo(self, cr), w, self.alto, self.valor / 100, color, paleta())
+            return
         r = self.alto / 2
         rect_redondeado(cr, 0, 0, w, self.alto, r)
         cr.set_source_rgba(*TENUE, 0.11)
         cr.fill()
-        color = COLORES["azul"] if self.color == "acento" else self.color or (COLORES["azul"] if self.valor < 70 else
-                               COLORES["amarillo"] if self.valor < 90 else COLORES["rojo"])
         ancho = w * min(max(self.valor, 0), 100) / 100
         if ancho > 0.5:
             rect_redondeado(cr, 0, 0, max(ancho, self.alto), self.alto, r)
@@ -591,11 +599,15 @@ class BarrasNucleos(Dibujo):
         bw = (w - gap * (n - 1)) / n
         for i, v in enumerate(self.valores):
             x = i * (bw + gap)
+            color = COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"]
+            frac = min(v / 100, 1.0)
+            if ARTE.dibuja:
+                ARTE.nucleo(LienzoCairo(self, cr), round(x), round(x + bw) - round(x), h, frac, color, paleta())
+                continue
             cr.set_source_rgba(*TENUE, 0.085)
             cr.rectangle(x, 0, bw, h)
             cr.fill()
-            cr.set_source_rgb(*(COLORES["azul"] if v < 60 else COLORES["naranja"] if v < 85 else COLORES["rojo"]))
-            frac = min(v / 100, 1.0)
+            cr.set_source_rgb(*color)
             cr.rectangle(x, h - frac * h, bw, frac * h)
             cr.fill()
 
@@ -1644,6 +1656,19 @@ class Tarjeta(Gtk.EventBox):
         x, y, cw, ch = m + 0.5, m + 0.5, w - 2 * m - 1, h - 2 * m - 1
         if self.sin_fondo():
             return False
+        if ARTE.dibuja:
+            cr.save()
+            cr.translate(m, m)
+            ARTE.tarjeta(LienzoCairo(self, cr), p, w - 2 * m, h - 2 * m, self.opacidad, paleta())
+            cr.restore()
+            forma = ARTE.forma(w - 2 * m, h - 2 * m)
+            if forma:  # el contenido no se sale de la tarjeta
+                cr.move_to(forma[0][0] + m, forma[0][1] + m)
+                for px, py in forma[1:]:
+                    cr.line_to(px + m, py + m)
+                cr.close_path()
+                cr.clip()
+            return False
         cr.save()
         rect_redondeado(cr, x, y, cw, ch, self.radio)
         cr.clip()
@@ -2597,12 +2622,21 @@ class VentanaConfig(Gtk.Window):
     # --- páginas -------------------------------------------------------------------
 
     def pagina_tema(self, cont):
-        lista = self.grupo(cont, "Temas de serie", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
+        lista = self.grupo(cont, "Arte")
+        arte = Gtk.ComboBoxText()
+        for a in artes.ARTES:
+            arte.append(a.clave, _(a.nombre))
+        actual = self.app.tema["global"]["arte"]
+        arte.set_active_id(artes.de(actual).clave)
+        arte.connect("changed", lambda c: GLib.idle_add(self.elegir_arte, c.get_active_id()))
+        self.fila(lista, "Tipo de arte", arte, "Cómo se dibujan los widgets. Cada tipo de arte tiene sus propios estilos.")
+
+        lista = self.grupo(cont, "Estilos", "Un clic y se aplica a todo. Después puedes retocar lo que quieras.")
         flujo = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=4, row_spacing=10,
                             column_spacing=10, homogeneous=True)
         for lado in ("top", "bottom", "start", "end"):
             getattr(flujo, f"set_margin_{lado}")(12)
-        for nombre, t in temas.PREDEFINIDOS.items():
+        for nombre, t in artes.de(actual).estilos.items():
             b = Gtk.Button()
             b.set_relief(Gtk.ReliefStyle.NONE)
             caj = caja(True, 6)
@@ -2658,6 +2692,11 @@ class VentanaConfig(Gtk.Window):
         cr.paint()
         pintar_fondo(cr, t["panel"], ancho, alto, 1.0, "panel_")
         p = t["widgets"]
+        arte = artes.de(t["global"]["arte"])
+        if arte.dibuja:
+            cr.translate(10, 10)
+            arte.muestra(LienzoCairo(w, cr), t, ancho - 20, alto - 20)
+            return
         cr.save()
         cr.translate(10, 10)
         rect_redondeado(cr, 0, 0, ancho - 20, alto - 20, min(p["radio"], 10))
@@ -2677,6 +2716,11 @@ class VentanaConfig(Gtk.Window):
         cr.set_source_rgb(*hex_rgb(t["global"]["acento"]))
         rect_redondeado(cr, 20, 42, ancho - 40, 5, 2.5)
         cr.fill()
+
+    def elegir_arte(self, arte):
+        if arte != self.app.tema["global"]["arte"]:
+            self.elegir_tema(next(iter(artes.de(arte).estilos.values())))
+        return False
 
     def elegir_tema(self, t):
         nuevo = temas.completo(t)
@@ -3972,7 +4016,10 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
         self.tema = temas.completo(self.config.get("tema"))
         aplicar_colores(self.tema)
         if PROVEEDOR:
-            PROVEEDOR.load_from_data(css_tema(self.tema).encode())
+            css = css_tema(self.tema)
+            if ARTE.radio_boton is not None:
+                css += f".hw button {{ border-radius: {ARTE.radio_boton}px; }}"
+            PROVEEDOR.load_from_data(css.encode())
         for t in getattr(self, "tarjetas", []):
             if t._margen != t.margen_neon():  # se ha activado o quitado el neón
                 t.ajustar_margenes()
