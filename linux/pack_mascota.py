@@ -526,26 +526,6 @@ def que_suena(app):
     return estado == "ok", estado != "ok"
 
 
-# En la línea de órdenes de un juego: el "reaper" de Steam vive lo que dura el juego,
-# y lo de steamapps/common (el juego, Proton) solo corre con uno abierto
-SENALES_JUEGO = (b"SteamLaunch", b"/steamapps/common/", b"lutris-wrapper")
-
-
-def hay_juego():
-    """Si hay un juego en marcha (en Windows lo dice el medidor de FPS)."""
-    for pid in os.listdir("/proc"):
-        if not pid.isdigit():
-            continue
-        try:
-            with open(f"/proc/{pid}/cmdline", "rb") as f:
-                orden = f.read(4096)
-        except OSError:
-            continue  # se ha cerrado o no es nuestro
-        if any(s in orden for s in SENALES_JUEGO) or orden.startswith(b"gamescope"):
-            return True
-    return False
-
-
 def avanzar_mascota(app):
     """Cada pocos segundos: el tiempo pasa para la mascota, aunque su tarjeta no se vea."""
     m, ctx = app.mascota, app.mascota_contexto

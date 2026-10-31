@@ -553,30 +553,6 @@ def aplicar(self, s):
     self.mascota_contexto["jugando"] = jugando(fps)
 
 
-# Además de las de MedidorFPS.ESCRITORIO: también pintan fotogramas y no son juegos
-NO_JUEGOS = {"python.exe", "pythonw.exe", "moondeck.exe", "claude.exe", "steelseriesgg.exe", "radeonsoftware.exe",
-             "amdrsserv.exe", "nvidia overlay.exe", "wallpaper32.exe", "wallpaper64.exe", "lively.exe"}
-
-
-def jugando(fps):
-    """¿Hay un juego delante? Lo que presenta fotogramas tiene que ser la ventana que tienes
-    delante: si no, cualquier app animada de fondo (la de Claude, el software de la gráfica...)
-    contaba como un juego y la mascota sacaba el mando con Spotify abierto."""
-    if not fps:
-        return False
-    app = fps["app"].lower()
-    if app in MedidorFPS.ESCRITORIO or app in NO_JUEGOS:
-        return False
-    try:
-        import psutil
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        pid = ctypes.c_ulong()
-        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-        return psutil.Process(pid.value).name().lower() == app
-    except Exception:  # noqa: BLE001 - el proceso se ha cerrado justo ahora
-        return False
-
-
 def menu(self, tarjeta, menu):
     if tarjeta.clave == "mascota":
         m = self.mascota
