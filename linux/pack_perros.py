@@ -34,17 +34,22 @@ class VentanaMancha(Gtk.Window):
         GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.LEFT, max(0, mancha["x"] - ANCHO_MANCHA // 2))
         GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, max(0, mancha["y"] - ALTO_MANCHA // 2))
-        self.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_MOTION_MASK)
-        self.connect("draw", self.dibujar)
-        self.connect("motion-notify-event", self.frotar)
-        self.connect("button-press-event", lambda _w, e: setattr(self, "ultimo", (e.x, e.y)))
+        # Una capa sin contenido se queda sin tamaño: el área es la que le da los píxeles.
+        area = Gtk.DrawingArea()
+        area.set_size_request(ANCHO_MANCHA, ALTO_MANCHA)
+        area.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_MOTION_MASK)
+        area.connect("draw", self.dibujar)
+        area.connect("motion-notify-event", self.frotar)
+        area.connect("button-press-event", lambda _w, e: setattr(self, "ultimo", (e.x, e.y)))
+        self.add(area)
+        self.area = area
         self.show_all()
 
     def frotar(self, _w, e):
         if self.ultimo:
             self.vida -= min(math.hypot(e.x - self.ultimo[0], e.y - self.ultimo[1]), 30) * .012
         self.ultimo = (e.x, e.y)
-        self.queue_draw()
+        self.area.queue_draw()
         if self.vida <= 0:
             self.al_limpiar(self)
 
