@@ -443,15 +443,36 @@ class BarrasNucleos(QWidget):
 
     def __init__(self, n):
         super().__init__()
-        self.valores = [0.0] * n
+        self.valores = [0.0] * n  # lo que se ve ahora
+        self.antes = [0.0] * n    # lo que se veía al llegar la última lectura
+        self.destino = [0.0] * n  # la última lectura
+        self.t_dato = time.monotonic()
+        self.ritmo = INTERVALO  # segundos entre lecturas, medidos
         self.setMinimumHeight(16)
+        self.reloj = QTimer(self)
+        self.reloj.timeout.connect(self._fluir)
+        self.reloj.start(FOTOGRAMA_GRAFICA)
 
     def sizeHint(self):
         return QSize(ANCHO - 32, 42)
 
+    def _fluir(self):
+        # Solo si alguna barra se ha movido medio píxel.
+        fase = min((time.monotonic() - self.t_dato) / max(self.ritmo, 0.1), 1.0)
+        nuevos = [a + (d - a) * fase for a, d in zip(self.antes, self.destino)]
+        margen = 50 / max(self.height(), 1)  # medio píxel, en % de la barra
+        if any(abs(n - v) >= margen for n, v in zip(nuevos, self.valores)):
+            self.valores = nuevos
+            self.update()
+
     def set(self, valores):
-        self.valores = valores
-        self.update()
+        """Como las gráficas, van una lectura por detrás: cada barra sube o baja hasta la última
+        lectura durante el tiempo que tarda en llegar la siguiente."""
+        self.antes = self.valores
+        self.destino = list(valores)
+        ahora = time.monotonic()
+        self.ritmo += (min(ahora - self.t_dato, 6.0) - self.ritmo) * 0.3
+        self.t_dato = ahora
 
     def paintEvent(self, _e):
         p = QPainter(self)
