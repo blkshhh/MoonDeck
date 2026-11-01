@@ -21,6 +21,7 @@ Un pack_<id>.py puede definir:
     panel(app, ventana)             al crear la ventana del modo panel
     ajustes_panel(ventana, cont)    su parte de Configuración > Panel
     fondo_propio(app)               True si el pack pone el fondo del panel (se quita el color)
+    ventanas_abiertas(app)          MoonDeck ha abierto o reabierto ventanas (lo último abierto queda encima)
     salir(app)
 
 Descargar un pack baja el zip del release de esta misma versión y saca solo sus archivos,
@@ -72,6 +73,8 @@ CATALOGO = tuple(p for p in (
      ("Móvil",), ("movil.py",)) if sys.platform != "win32" else None,
     ("claude", "Claude", "Lo que llevas gastado de tu plan de Claude, en 5 horas y en la semana.",
      ("Claude",), ("uso_claude.py",)) if sys.platform != "win32" else None,
+    ("perros", "Perros", "Un perro en 3D que vive en tu escritorio y necesita tus cuidados (usa la GPU).",
+     ("Perro",), ("can_esqueleto.py", "can_partida.py", "can_gl.py", "can_ventana.py")) if sys.platform != "win32" else None,
     ("fondos", "Fondos", "Fotos de Unsplash detrás de las tarjetas del modo panel, con tu clave gratuita.",
      (), ("fondos.py",)),
     ("immich", "Immich", "Tu servidor de fotos Immich: espacio, biblioteca, tareas y la IA.",

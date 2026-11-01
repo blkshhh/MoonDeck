@@ -3223,7 +3223,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             # El lanzador llega oculto (vacío no aporta nada): se activa en "Widgets visibles".
             self.config.setdefault("ocultos", []).append("apps")
             self.config["apps_visto"] = True
-        for clave in ("immich", "docker", "claude"):
+        for clave in ("immich", "docker", "claude", "perros"):
             if not self.config.get(f"{clave}_visto"):  # widgets nuevos: llegan ocultos
                 self.config.setdefault("ocultos", []).append(clave)
                 self.config[f"{clave}_visto"] = True
@@ -3668,6 +3668,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             self.medir_area(monitor, colocar)
         packs.llamar(self.packs, "visibles", self, {t.clave for t in self.visibles()})
         self.rehacer_bandeja()
+        packs.llamar(self.packs, "ventanas_abiertas", self)
 
     def ventana_para(self, tarjeta, encima, monitor, pos=None):
         if tarjeta.get_parent():
@@ -3934,6 +3935,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
                 v.hide()
             v.show()
             v.present()
+        packs.llamar(self.packs, "ventanas_abiertas", self)
 
     def mirar_aperturas(self):
         if instancia.quieren_verme(CARPETA):  # la han vuelto a abrir: se muestra la que ya estaba
@@ -3947,6 +3949,7 @@ class Monitor(*[p.Metodos for p in PACKS if hasattr(p, "Metodos")]):
             ventanas.insert(0, self.panel.fondo)  # primero, para que quede debajo al volver
         for v in ventanas:
             v.set_visible(not visible)
+        packs.llamar(self.packs, "ventanas_abiertas", self)
 
     def salir(self):
         self._activo = False
