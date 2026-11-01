@@ -93,6 +93,7 @@ class Can:
         self.anclas = []                   # dónde cae cada ancla en la vista (lo usa el baño)
         self.chorro = None                 # (x, y) de la ducha, en coordenadas del perro
         self.aguanta = 0.0
+        self.mira_yaw, self.mira_pitch = 0.0, 0.0  # la cabeza va hacia su objetivo, sin saltos
 
     def pedir(self, accion, segundos=4.0):
         """Deja lo que hacía y hace esto."""
@@ -201,13 +202,19 @@ class Can:
         n1 = (n0[0] + math.sin(cuello) * 46, n0[1] - math.cos(cuello) * 46, 0.0)
         cab = (n1[0] + 8, n1[1] - 8, 0.0)
         h_yaw, h_pitch = sacude * .55, (.2 if l > .7 else 0.0) + alicaido * .25
-        if self.raton:
+        mira_yaw, mira_pitch = 0.0, h_pitch
+        if self.raton and self.accion != "banio":  # en el baño el ratón es la esponja: no la sigue
             vista = _girar(cab, self.yaw)
             mx, my = self.raton[0] - self.x - vista[0], self.raton[1] - self.y - vista[1] - vista[2] * CAMARA
             hacia = math.atan2(my * 1.7, mx) - self.yaw
             hacia = math.atan2(math.sin(hacia), math.cos(hacia))
-            h_yaw += _clamp(hacia, -.85, .85) * (.25 if abs(hacia) > 2.2 else .8)
-            h_pitch = _clamp(my / 300, -.3, .28)
+            mira_yaw = _clamp(hacia, -.85, .85) * (.25 if abs(hacia) > 2.2 else .8)
+            mira_pitch = _clamp(my / 300, -.3, .28)
+        suave = min(1, dt * 9)
+        self.mira_yaw += (mira_yaw - self.mira_yaw) * suave
+        self.mira_pitch += (mira_pitch - self.mira_pitch) * suave
+        h_yaw += self.mira_yaw
+        h_pitch = self.mira_pitch
 
         def en_cabeza(q):
             x = q[0] * math.cos(h_pitch) - q[1] * math.sin(h_pitch)
